@@ -1,0 +1,19 @@
+{
+    "private": true,
+    "scripts": {
+        "build": "dotnet fable test && webpack-cli --mode production",
+        "start": "webpack-dev-server",
+        "test": "dotnet tool restore && dotnet fable test --outDir dist/tests && mocha dist/tests -r esm",
+        "headless-tests": "npm run build && dotnet run --project ./headless/Headless.fsproj"
+    },
+    "devDependencies": {
+        "mocha": "^6.2.0",
+        "webpack": "^4.27.1",
+        "webpack-cli": "^3.3.12",
+        "webpack-dev-server": "^3.11.0"
+    },
+    "dependencies": {
+        "esm": "^3.2.25",
+        "save-dev": "0.0.1-security"
+    }
+}

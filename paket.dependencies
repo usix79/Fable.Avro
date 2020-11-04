@@ -1,0 +1,17 @@
+source https://api.nuget.org/v3/index.json
+storage: none
+framework: netstandard2.0
+
+nuget Fable.Mocha
+nuget FSharp.Core
+nuget Fable.Core
+nuget Fable.SimpleJson
+
+group Build
+    source https://api.nuget.org/v3/index.json
+    framework: netstandard2.0
+    storage: none
+
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.Core.Target
+    nuget Fake.DotNet.Cli
