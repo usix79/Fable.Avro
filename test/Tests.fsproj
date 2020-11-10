@@ -8,7 +8,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="paket.references" />
-    <Compile Include="Tests.fs" />
+    <Compile Include="TestDomain.fs" />
+    <Compile Include="SerdeTests.fs" />
+    <Compile Include="SchemaTests.fs" />
+    <Compile Include="Main.fs" />
   </ItemGroup>
 
   <Import Project="..\.paket\Paket.Restore.targets" />

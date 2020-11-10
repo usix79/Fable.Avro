@@ -9,7 +9,7 @@ module.exports = function (evn, argv) {
         mode: mode,
         devtool: isProduction ? false : "eval-source-map",
         entry: {
-            app: "./test/Tests.fs.js"
+            app: "./test/Main.fs.js"
         },
         output: {
             filename: 'bundle.js',
