@@ -5,7 +5,7 @@ open FSharp.Reflection
 open Fable.SimpleJson
 open Fable.Core
 
-let private rulesMap (rules:CustomRule list) =
+let internal rulesMap (rules:CustomRule list) =
     rules
     |> List.map(fun rule ->
         rule.InstanceType.Name,
@@ -93,6 +93,7 @@ let inline createSerializer'(type': Type) (customRules:CustomRule list): obj -> 
             | TypeInfo.DateTime -> (unbox<DateTime> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
             | TypeInfo.DateTimeOffset -> (unbox<DateTimeOffset> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
             | TypeInfo.TimeSpan -> unbox<int> value |> float |> JNumber
+            | TypeInfo.BigInt -> unbox<Numerics.BigInteger> value |> string |> JString
             | TypeInfo.Any f ->
                 let type' = f()
                 match rulesMap.TryFind type'.Name with
@@ -112,9 +113,30 @@ let inline createSerializer<'T> (customRules:CustomRule list): 'T -> Result<Json
         with
         | err -> Error err.Message
 
-let inline createDeserializer' (type': Type) (customRules:CustomRule list): Json -> obj =
+let inline createDeserializer' (type': Type) (customRules:CustomRule list) (annotations:string): Json -> obj =
     let ti = createTypeInfo type'
     let rulesMap = customRules @ CustomRule.buidInRules |> rulesMap
+    let ann = Schema.Annotator(annotations)
+    let defValues = Collections.Generic.Dictionary<string*string,obj>()
+    let casesCache = Collections.Generic.Dictionary<string, Map<string,UnionCase>>()
+    let getCasesMap (cases:UnionCase array) unionType =
+        let unionName = Schema.nameFromType unionType
+        match casesCache.TryGetValue unionName with
+        | true, map -> map
+        | _ ->
+            let map =
+                cases
+                |> List.ofArray
+                |> List.collect (fun case ->
+                    (case.CaseName,case) ::
+                        (ann.Record (unionName + "." + case.CaseName)
+                            |> Option.map (fun r ->
+                                r.Aliases
+                                |> List.map (fun alias -> alias,case))
+                            |> Option.defaultValue []))
+                |> Map.ofList
+            casesCache.[unionName] <- map
+            map
 
     fun (json: Json) ->
         let rec parse (json: Json) (ti: TypeInfo) =
@@ -132,15 +154,20 @@ let inline createDeserializer' (type': Type) (customRules:CustomRule list): Json
             | JNumber v, TypeInfo.Float -> v |> unbox
             | JString v, TypeInfo.Enum f ->
                 let (_, type') = f()
-                Enum.Parse(type', v)
-                // TODO: default value
+                try
+                    Enum.Parse(type', v)
+                with
+                | err ->
+                    ann.Enum (Schema.nameFromTypeInfo true ti)
+                    |> Option.bind (fun r -> r.Default)
+                    |> Option.bind (function JString v -> Enum.Parse(type', v) |> Some | _ -> None)
+                    |> Option.defaultWith (fun () -> raise err)
             | JArray elements, TypeInfo.List f -> parseArray (f()) elements |> unbox
             | JArray elements, TypeInfo.Array f -> parseArray (f()) elements |> Array.ofList |> unbox
             | JArray elements, TypeInfo.ResizeArray f -> parseArray (f()) elements |> ResizeArray |> unbox
             | JArray elements, TypeInfo.Set f -> parseArray (f()) elements |> List.map unbox |> Set.ofList |> unbox
             | JArray elements, TypeInfo.HashSet f -> parseArray (f()) elements |> Collections.Generic.HashSet |> unbox
             | JArray elements, TypeInfo.Seq f -> parseArray (f()) elements |> unbox
-
             | JObject props, TypeInfo.Map f ->
                 let _, valueTypeInfo = f()
                 props
@@ -156,34 +183,28 @@ let inline createDeserializer' (type': Type) (customRules:CustomRule list): Json
                 let fields, recordType = f()
                 let recordValues =
                     fields
-                    |> Array.map (fun field ->
-                        props.TryFind field.FieldName
-                        |> Option.map (fun value -> parse value field.FieldType)
-                        |> Option.defaultValue null
-                    )
+                    |> Array.map (fun field -> fieldValue props (fun () -> Schema.nameFromType recordType) field.FieldName field.FieldType)
                 FSharpValue.MakeRecord(recordType, recordValues)
             | JObject props, TypeInfo.Tuple f ->
                 f()
                 |> Array.mapi(fun idx itemTypeInfo ->
-                    props.TryFind (sprintf "Item%d" (idx+1))
-                    |> Option.map (fun itemJson -> parse itemJson itemTypeInfo)
-                    |> Option.defaultValue null)
+                    let fieldName = sprintf "Item%d" (idx+1)
+                    fieldValue props (fun () -> Schema.nameFromTypeInfo true ti) fieldName itemTypeInfo)
                 |> unbox
             | JObject props, TypeInfo.Union f ->
                 let unionCases, unionType = f()
                 let caseName, json = props |> Map.toSeq |> Seq.head
                 match json with
                 | JObject props ->
-                    match unionCases |> Array.tryFind (fun case -> case.CaseName = caseName) with
-                    | Some case ->
+                    let map = getCasesMap unionCases unionType
+                    map.TryFind caseName
+                    |> Option.map (fun case ->
                         let unionFields =
                             case.Info.GetFields()
                             |> Array.mapi(fun idx pi ->
-                                match props.TryFind pi.Name with
-                                | Some json -> parse json case.CaseTypes.[idx]
-                                | None -> null)
-                        FSharpValue.MakeUnion(case.Info, unionFields)
-                    | None -> failwithf "Case not found %A" caseName
+                                fieldValue props (fun () -> caseName) pi.Name case.CaseTypes.[idx])
+                        FSharpValue.MakeUnion(case.Info, unionFields))
+                    |> Option.defaultValue null
                 | wrong -> failwithf "Union case expected to be in json object, but %A" wrong
             | JNull, TypeInfo.Option f -> unbox None
             | JObject props, TypeInfo.Option f ->
@@ -197,7 +218,8 @@ let inline createDeserializer' (type': Type) (customRules:CustomRule list): Json
             | JString v, TypeInfo.DateTime -> DateTime.Parse(v, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) |> unbox
             | JString v, TypeInfo.DateTimeOffset -> DateTimeOffset.Parse(v, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) |> unbox
             | JNumber v, TypeInfo.TimeSpan -> unbox (JS.Math.floor v)
-
+            | JNumber v, TypeInfo.BigInt -> unbox (bigint (JS.Math.floor(v)))
+            | JString v, TypeInfo.BigInt -> unbox unbox (Numerics.BigInteger.Parse v)
             | json, TypeInfo.Any f ->
                 let type' = f()
                 match rulesMap.TryFind type'.Name with
@@ -208,11 +230,35 @@ let inline createDeserializer' (type': Type) (customRules:CustomRule list): Json
             | wrong -> failwithf "Deserialization of the type is not supported: %A" wrong
         and parseArray elTypeInfo elements =
             elements |> List.map (fun el -> parse el elTypeInfo)
+        and fieldValue (props:Map<string,Json>) recordNameF fieldName fieldTypeInfo =
+            props.TryFind fieldName
+            |> Option.map (fun itemJson -> parse itemJson fieldTypeInfo)
+            |> Option.orElseWith (fun () ->
+                let recordName = recordNameF()
+                ann.Field recordName fieldName
+                |> Option.bind (fun r ->
+                    r.Aliases
+                    |> List.choose (props.TryFind)
+                    |> List.tryHead
+                    |> Option.map (fun itemJson -> parse itemJson fieldTypeInfo)))
+            |> Option.defaultWith (fun () ->
+                let recordName = recordNameF()
+                match defValues.TryGetValue ((recordName,fieldName)) with
+                | true, v -> v
+                | _ ->
+                    let v =
+                        ann.Field recordName fieldName
+                        |> Option.bind (fun r ->
+                            r.Default
+                            |> Option.map (fun json -> parse json fieldTypeInfo))
+                        |> Option.defaultValue null
+                    defValues.[(recordName,fieldName)] <- v
+                    v)
 
         parse json ti
 
-let inline createDeserializer<'T> (customRules:CustomRule list): Json -> Result<'T, string> =
-    let deserializer = createDeserializer' typeof<'T> customRules
+let inline createDeserializer<'T> (customRules:CustomRule list) annotations: Json -> Result<'T, string> =
+    let deserializer = createDeserializer' typeof<'T> customRules annotations
 
     fun (json: Json) ->
         try

@@ -21,10 +21,10 @@ type Schema =
     | Fixed of FixedSchema
     | Decimal of DecimalSchema
 and RecordSchema = {Name: string; Aliases: string list; Fields: List<RecordField>}
-and RecordField = {Name: string; Aliases: string list; Type: Schema; Default: string option}
-and EnumSchema = {Name: string; Aliases: string list; Symbols: string array; Default: string option}
-and ArraySchema = {Items: Schema; Default: string option}
-and MapSchema = {Values: Schema; Default: string option}
+and RecordField = {Name: string; Aliases: string list; Type: Schema; Default: Json option}
+and EnumSchema = {Name: string; Aliases: string list; Symbols: string array; Default: Json option}
+and ArraySchema = {Items: Schema; Default: Json option}
+and MapSchema = {Values: Schema; Default: Json option}
 and FixedSchema = {Name: string; Aliases: string list; Size: int}
 and DecimalSchema = {Precision: int; Scale: int}
 
@@ -64,19 +64,17 @@ module Schema =
     let private getFullName (props:Map<string,Json>) =
         getName "" props |> snd
 
-    let private getAliases ns (fields:Map<string,Json>) =
-        match fields.TryFind "aliases" with
+    let private getAliases ns (props:Map<string,Json>) =
+        match props.TryFind "aliases" with
         | Some (JArray list) ->  getStringList list |> List.map ((canonicalName ns) >> snd)
         | _ -> []
 
-    let private getSymbols (fields:Map<string,Json>) =
-        match fields.TryFind "symbols" with
+    let private getSymbols (props:Map<string,Json>) =
+        match props.TryFind "symbols" with
         | Some (JArray list) -> getStringList list |> Array.ofList
         | _ -> [||]
 
-    let private getDefault (fields:Map<string,Json>) =
-        fields.TryFind "default"
-        |> Option.map (function JString str -> str | json -> SimpleJson.toString json)
+    let private getDefault (props:Map<string,Json>) = props.TryFind "default"
 
     let ofString (jsonString:string) =
         let cache = Cache<string,Schema>()
@@ -148,7 +146,7 @@ module Schema =
             props.TryFind name |> Option.bind (function | JArray list -> Some list | _ -> None)
 
         let field (props:Map<string,Json>) =
-            {|  Name = getFullName props; Aliases = getAliases "" props; Default = getDefault props  |}
+            {|  Name = getFullName props; Aliases = getAliases "" props; Default = props.TryFind "default"  |}
 
         let records,enums,decimals =
             getProps json
@@ -164,7 +162,7 @@ module Schema =
                 let props = getProps json
                 {|  Name = getFullName props
                     Aliases = getAliases "" props
-                    Default = getDefault props |})),
+                    Default = props.TryFind "default" |})),
             getProps json
             |> getList "decimals"
             |> Option.map (List.map (fun json ->
@@ -174,13 +172,18 @@ module Schema =
                     Scale = getNumberProp props "scale" |> int|}))
 
         member _.Enum name =
-            enums |> Option.bind (List.tryFind (fun r -> r.Name = name))
+            enums
+            |> Option.bind (List.tryFind (fun r -> r.Name = name))
 
         member _.Record name =
-            records |> Option.bind (List.tryFind (fun r -> r.Name = name))
+            records
+            |> Option.bind (List.tryFind (fun r -> r.Name = name))
 
         member this.Field recordName fieldName =
-            this.Record recordName |> Option.bind (fun r -> r.Fields |> Option.bind (List.tryFind (fun fr -> fr.Name = fieldName)))
+            this.Record recordName
+            |> Option.bind (fun r ->
+                r.Fields
+                |> Option.bind (List.tryFind (fun fr -> fr.Name = fieldName)))
 
         member _.Decimal recordName fieldName =
             decimals |> Option.bind(List.tryFind (fun r -> r.RecordName = recordName && r.FieldName = fieldName))
@@ -223,6 +226,11 @@ module Schema =
             let _, type' = f()
             nameFromType type'
         | TypeInfo.Any f -> nameFromType (f())
+        | TypeInfo.Guid -> if isRoot then "string" else "Guid"
+        | TypeInfo.DateTime  -> if isRoot then "string" else "DateTime"
+        | TypeInfo.DateTimeOffset -> if isRoot then "string" else "DateTimeOffset"
+        | TypeInfo.TimeSpan -> if isRoot then "int" else "TimeSpan"
+        | TypeInfo.BigInt -> if isRoot then "string" else "BigInt"
         | wrongTypeInfo -> failwithf "Name for the type is not supported: %A" wrongTypeInfo
     and nameFromType (type':Type) : string =
         let name = type'.FullName.Replace('+','.')
@@ -295,7 +303,9 @@ module Schema =
                         [|for obj in Enum.GetValues type' do obj|]
                         |> Array.sortBy (fun obj -> Int32.Parse (obj.ToString()))
                         |> Array.map (fun obj -> Enum.GetName(type', obj))
-                    Default = annotator.Enum name |> Option.bind (fun r -> r.Default) }
+                    Default =
+                        annotator.Enum name
+                        |> Option.bind (fun r -> r.Default)}
                 |> cache.AddValue name
                 |> Ok
             | TypeInfo.Record f ->
@@ -366,7 +376,7 @@ module Schema =
                             | _ -> fieldSchema
                         let defValue =
                             match fieldSchema with
-                            | Union [|Null;_|] -> Some "null"
+                            | Union [|Null;_|] -> Some JNull
                             | _ -> None
                         match annotator.Field recordName fieldName with
                         | Some a -> { Name = fieldName; Aliases = a.Aliases; Type = fieldSchema; Default = a.Default}
@@ -386,16 +396,7 @@ module Schema =
             | (values:string array) -> (name, values |> Array.map JString |> List.ofArray |> JArray) |> Some
 
         let aliasesField aliases = arrayField "aliases" (aliases |> Array.ofList)
-        let defaultField  (schema:Schema) (v:string option) =
-            let rec wr v = function
-                | Null -> JNull
-                | Boolean -> JBool(bool.Parse(v))
-                | Int | Long | Float | Double -> JNumber (Double.Parse(v))
-                | Record _ | Map _ | Array _ -> SimpleJson.parse v
-                | Union arr -> wr v arr.[0]
-                | _ -> JString v
-
-            v |> Option.map (fun v -> "default", wr v schema)
+        let defaultField = Option.map (fun v -> "default", v)
 
         let rec parse = function
             | Null -> JNull
@@ -409,12 +410,12 @@ module Schema =
             | Array schema ->
                 [   typeField "array"
                     "items", parse schema.Items
-                    yield! defaultField (Array schema) schema.Default |> Option.toArray
+                    yield! defaultField schema.Default |> Option.toArray
                 ] |> Map.ofList |> JObject
             | Map schema ->
                 [   typeField "map"
                     "values", parse schema.Values
-                    yield! defaultField (Map schema) schema.Default |> Option.toArray
+                    yield! defaultField schema.Default |> Option.toArray
                 ] |> Map.ofList |> JObject
             | Enum schema when cache.ContainsKey schema.Name -> JString schema.Name
             | Enum schema ->
@@ -423,7 +424,7 @@ module Schema =
                     nameField schema.Name
                     yield! aliasesField schema.Aliases |> Option.toArray
                     yield! arrayField "symbols" schema.Symbols |> Option.toArray
-                    yield! defaultField (Enum schema) schema.Default |> Option.toArray
+                    yield! defaultField schema.Default |> Option.toArray
                 ] |> Map.ofList |> JObject
             | Record schema when cache.ContainsKey schema.Name -> JString schema.Name
             | Record schema ->
@@ -436,7 +437,7 @@ module Schema =
                             [   nameField field.Name
                                 yield! aliasesField field.Aliases |> Option.toArray
                                 "type", parse field.Type
-                                yield! defaultField field.Type field.Default |> Option.toArray
+                                yield! defaultField field.Default |> Option.toArray
                             ]|> Map.ofList |> JObject
                         ] |> JArray
                 ] |> Map.ofList |> JObject

@@ -1,25 +1,28 @@
 module SerdeTests
 
-open System.Linq
 open System.Collections.Generic
 
 open Fable.Mocha
 open Fable.Avro
 open Foo.Bar
-open Fable.SimpleJson
-
 
 type Comparer = string -> obj -> obj -> unit
 type SimpleCase = {Name: string; Instance: obj; InstanceType: System.Type; Comparer: Comparer }
 type SimpleCaseList = {Name: string; Cases: SimpleCase list}
+type EvolutionCase = {Name: string; Instance: obj; InstanceType: System.Type; ExpectedInstance: obj; ExpectedType: System.Type; Annotations:string; Comparer: Comparer }
 
 let inline simpleCase'<'T> comparer name (instance:'T) =
     {Name = name; Comparer = comparer; Instance = instance; InstanceType = typeof<'T>}
 
 let inline simpleCase<'T when 'T:equality> name (instance:'T) =
-    {Name = name; Comparer = (fun msg v1 v2 -> Expect.equal (unbox v1) (unbox v2) msg); Instance = instance; InstanceType = typeof<'T>}
+    {Name = name; Comparer = (fun msg v1 v2 -> Expect.equal v1 v2 msg); Instance = instance; InstanceType = typeof<'T>}
 
 let simpleCaseList name cases = {Name = name; Cases = cases}
+
+let inline evolutionCase<'TSource, 'TDest when 'TDest:equality> name (instance:'TSource) (expectedInstance:'TDest) annotations =
+    {Name = name; Comparer = (fun msg v1 v2 -> Expect.equal v1 v2 msg);
+        Instance = instance; InstanceType = typeof<'TSource>;
+        ExpectedInstance = expectedInstance; ExpectedType = typeof<'TDest>; Annotations = annotations}
 
 let inline compareSequences<'T when 'T:equality> msg (expected:obj) (actual:obj) =
     let expected = expected :?> seq<'T> |> List.ofSeq
@@ -116,26 +119,91 @@ let simpleCases = [
         simpleCase "DateTime" {Value = System.DateTime.UtcNow}
         simpleCase "DateTimeOffset" {Value = System.DateTimeOffset.UtcNow}
         simpleCase "TimeSpan" {Value = System.TimeSpan.FromSeconds(321.5)}
+        simpleCase "BigInteger" {Value = System.Numerics.BigInteger.Parse("12134324239474828818828747110108719417219247192477444444224242424244242")}
     ]
+]
+
+let evolutionCases = [
+    """{
+        "records": [
+            {
+                "name": "Foo.Bar.RecordWithNewField",
+                "aliases": ["Foo.Bar.Foo.Bar.RecordWithId"],
+                "fields": [
+                    {"name": "NewField", "default": "Hello"}
+                ]
+            }
+        ]
+    }"""
+    |> evolutionCase "Added string field" ({Id=456}:RecordWithId) ({Id=456; NewField="Hello" }:RecordWithNewField)
+
+    """{
+        "records": [
+            {
+                "name": "Foo.Bar.NewRecord",
+                "aliases": ["Foo.Bar.OldRecord"],
+                "fields": [
+                    {"name": "Caption", "aliases": ["Title", "Cap"]},
+                    {"name": "Description", "aliases": [], "default": "Not Yet Described"}
+                ]
+            }
+        ]
+    }"""
+    |>evolutionCase "New Record" ({Id=456; Title="Hello World!!!"}:OldRecord) ({Id=456; Caption="Hello World!!!"; Description="Not Yet Described"}:NewRecord)
+
+    """{
+        "enums": [
+            { "name": "Foo.Bar.NewTestState", "aliases": ["Foo.Bar.TestState"], "default": "Blue" }
+    ]}"""
+    |> evolutionCase "New Enum" (TestState.Green) (NewTestState.Blue)
+
+    """{
+        "records": [
+            { "name": "Foo.Bar.RecordV2", "aliases": ["Foo.Bar.RecordV1"]},
+            { "name": "Foo.Bar.UnionV2.Case3", "aliases": ["Case1"]}
+        ]
+    }"""
+    |> evolutionCase "Rename of Union Case" ({Union = Case1 "Hello!"}:RecordV1) ({Union = Case3 "Hello!"}:RecordV2)
+
+    """{
+        "records": [
+            {
+                "name": "Foo.Bar.RecordV1",
+                "fields": [
+                    {"name": "Union", "aliases": [], "default": {"UnknownCase": {}}}
+                ]
+            }
+        ]
+    }"""
+    |> evolutionCase "UnknownUnion in Record" ({Union = Case3 "Hello!"}:RecordV2) ({Union = UnionV1.UnknownCase}:RecordV1)
 ]
 
 let jsonSimpleTest (case:SimpleCase) =
     testCase case.Name <| fun _ ->
-
         let serializer = JsonSerde.createSerializer' case.InstanceType []
         let json = serializer case.Instance
-
-        printfn "Serialization result: %s" <| SimpleJson.toString json
-
-        let deserializer = JsonSerde.createDeserializer' case.InstanceType []
+        //printfn "Serialization result: %s" <| SimpleJson.toString json
+        let deserializer = JsonSerde.createDeserializer' case.InstanceType [] ""
         let copy = deserializer json
+        case.Comparer "Copy should be equal to original" copy case.Instance
 
-        case.Comparer "Copy should be equal to original" case.Instance copy
+let jsonEvolutionTest (case:EvolutionCase) =
+    testCase case.Name <| fun _ ->
+        let serializer = JsonSerde.createSerializer' case.InstanceType []
+        let json = serializer case.Instance
+        //printfn "Serialization result: %s" <| SimpleJson.toString json
+        let deserializer = JsonSerde.createDeserializer' case.ExpectedType [] case.Annotations
+        let copy = deserializer json
+        case.Comparer "Deserialized value should be equal to expected" copy case.ExpectedInstance
 
 let serdeTests =
     [
         simpleCases
         |> List.map (fun list -> testList list.Name (list.Cases |> List.map jsonSimpleTest))
         |> testList "Json"
+
+        evolutionCases
+        |> List.map jsonEvolutionTest
+        |> testList "Json Evolution"
 
     ] |> testList "Serde"

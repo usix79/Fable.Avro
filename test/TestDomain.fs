@@ -112,7 +112,7 @@ type Basket = list<LineItem>
 
 type UnionV1 =
     | UnknownCase
-    | Case1
+    | Case1 of string
 
 type RecordV1 = {
     Union : UnionV1
@@ -120,9 +120,8 @@ type RecordV1 = {
 
 type UnionV2 =
     | UnknownCase
-    | Case1
     | Case2
-    | Case3
+    | Case3 of string
 
 type RecordV2 = {
     Union : UnionV2
