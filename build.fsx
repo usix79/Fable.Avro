@@ -66,7 +66,7 @@ Target.create "Live" <| fun _ ->
 Target.create "RunTests" <| fun _ ->
     printfn "Building %s with Fable" testsPath
     npm "test" "."
-    //npm "run headless-tests" "."
+    npm "run headless-tests" "."
     cleanBundles()
     cleanDirs [ "dist" ]
 

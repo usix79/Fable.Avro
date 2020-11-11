@@ -14,7 +14,7 @@ let internal rulesMap (rules:CustomRule list) =
             DeserializationCast = rule.DeserializationCast|})
     |> Map.ofList
 
-let inline createSerializer'(type': Type) (customRules:CustomRule list): obj -> Json =
+let createSerializer'(type': Type) (customRules:CustomRule list): obj -> Json =
     let ti = createTypeInfo type'
     let rulesMap = customRules @ CustomRule.buidInRules |> rulesMap
 
@@ -113,7 +113,7 @@ let inline createSerializer<'T> (customRules:CustomRule list): 'T -> Result<Json
         with
         | err -> Error err.Message
 
-let inline createDeserializer' (type': Type) (customRules:CustomRule list) (annotations:string): Json -> obj =
+let createDeserializer' (type': Type) (customRules:CustomRule list) (annotations:string): Json -> obj =
     let ti = createTypeInfo type'
     let rulesMap = customRules @ CustomRule.buidInRules |> rulesMap
     let ann = Schema.Annotator(annotations)
