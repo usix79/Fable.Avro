@@ -397,7 +397,7 @@ type DomainUnion =
     | Case3
 ```
 
-`Case3` will be deserialized to `UnknownCase` (first case of the `DomainUnion`). This is true for any occasion of DU in deserialized type (whenever it is a record's field, or item in an array, or value in a map). For example array `[Case1, Case3, Case2, Case1]` will be deserialized to `[Case1, UnknownCase, UnknownCase, Case1]`. Set `DeserializationOptions.EvolutionTolerantMode=false` if you don't want the behaviour.
+`Case3` will be deserialized to `UnknownCase` (first case of the `DomainUnion`). This is true for any occasion of DU in deserialized type (whenever it is a record's field, or item in an array, or value in a map). For example, array `[Case1, Case3, Case2, Case1]` will be deserialized to `[Case1, UnknownCase, UnknownCase, Case1]`. Set `DeserializationOptions.EvolutionTolerantMode=false` if you don't want the behaviour.
 
 
 # Custom Rules
