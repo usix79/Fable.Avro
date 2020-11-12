@@ -131,13 +131,23 @@ let evolutionCases = [
             {
                 "name": "Foo.Bar.RecordWithNewField",
                 "aliases": ["Foo.Bar.Foo.Bar.RecordWithId"],
+            }
+        ]
+    }"""
+    |> evolutionCase "Added string field" ({Id=456}:RecordWithId) ({Id=456; NewField="" }:RecordWithNewField)
+
+    """{
+        "records": [
+            {
+                "name": "Foo.Bar.RecordWithNewField",
+                "aliases": ["Foo.Bar.Foo.Bar.RecordWithId"],
                 "fields": [
                     {"name": "NewField", "default": "Hello"}
                 ]
             }
         ]
     }"""
-    |> evolutionCase "Added string field" ({Id=456}:RecordWithId) ({Id=456; NewField="Hello" }:RecordWithNewField)
+    |> evolutionCase "Added string field with default" ({Id=456}:RecordWithId) ({Id=456; NewField="Hello" }:RecordWithNewField)
 
     """{
         "records": [
@@ -155,9 +165,15 @@ let evolutionCases = [
 
     """{
         "enums": [
+            { "name": "Foo.Bar.NewTestState", "aliases": ["Foo.Bar.TestState"]}
+    ]}"""
+    |> evolutionCase "New Enum with default" (TestState.Green) (NewTestState.Yellow)
+
+    """{
+        "enums": [
             { "name": "Foo.Bar.NewTestState", "aliases": ["Foo.Bar.TestState"], "default": "Blue" }
     ]}"""
-    |> evolutionCase "New Enum" (TestState.Green) (NewTestState.Blue)
+    |> evolutionCase "New Enum with default" (TestState.Green) (NewTestState.Blue)
 
     """{
         "records": [
@@ -165,36 +181,69 @@ let evolutionCases = [
             { "name": "Foo.Bar.UnionV2.Case3", "aliases": ["Foo.Bar.UnionV1.Case1"]}
         ]
     }"""
-    |> evolutionCase "Rename of Union Case" ({Union = Case1 "Hello!"}:RecordV1) ({Union = Case3 "Hello!"}:RecordV2)
+    |> evolutionCase "Rename of Union Case" ({Union = UnionV1.Case1 "Hello!"}:RecordV1) ({Union = Case3 "Hello!"}:RecordV2)
 
     """{
         "records": [
             {
                 "name": "Foo.Bar.RecordV1",
                 "fields": [
-                    {"name": "Union", "aliases": [], "default": {"Foo.Bar.UnionV1.UnknownCase": {}}}
+                    {"name": "Union", "aliases": [], "default": {"Item":"World!"}}
                 ]
             }
         ]
     }"""
-    |> evolutionCase "UnknownUnion in Record" ({Union = Case3 "Hello!"}:RecordV2) ({Union = UnionV1.UnknownCase}:RecordV1)
+    |> evolutionCase "UnknownUnion in Record" ({Union = Case3 "Hello!"}:RecordV2) ({Union = UnionV1.UnknownCase ""}:RecordV1)
+
+    """{
+        "records": [
+            {
+                "name": "Foo.Bar.RecordV3",
+                "fields": [
+                    {"name": "Union2", "aliases": [], "default": {"Item":"World!"}}
+                ]
+            }
+        ]
+    }"""
+    |> evolutionCase "Unknown Union field in Record" ({Union = Case3 "Hello!"}:RecordV2) ({Union = Case3 "Hello!"; Union2 = UnknownCase "World!"}:RecordV3)
+
+    """{
+        "records": [
+            { "name": "Foo.Bar.UnionV1.Case1", "aliases": ["Foo.Bar.UnionV2.Case1"]}
+        ]
+    }"""
+    |> evolutionCase "Array with unknown case"
+        [Case1 "Start"; Case3 "Hello!"; Case2; Case1 "End"]
+        [UnionV1.Case1 "Start"; UnionV1.UnknownCase ""; UnionV1.UnknownCase ""; UnionV1.Case1 "End"]
+
+    """{
+        "records": [
+            { "name": "Foo.Bar.UnionV1.Case1", "aliases": ["Foo.Bar.UnionV2.Case1"]}
+        ]
+    }"""
+    |> evolutionCase "Map with unknown case"
+        (["I1", Case1 "Start"; "I2", Case3 "Hello!"; "I3", Case2; "I4",Case1 "End"] |> Map.ofList)
+        (["I1", UnionV1.Case1 "Start"; "I2", UnionV1.UnknownCase ""; "I3", UnionV1.UnknownCase ""; "I4", UnionV1.Case1 "End"] |> Map.ofList)
+
 ]
 
 let jsonSimpleTest (case:SimpleCase) =
     testCase case.Name <| fun _ ->
-        let serializer = JsonSerde.createSerializer' case.InstanceType []
+        let serializer = JsonSerde.createSerializer' case.InstanceType JsonSerde.defaultSerializationOptions
         let json = serializer case.Instance
-        printfn "Serialization result: %s" <| Fable.SimpleJson.SimpleJson.toString json
-        let deserializer = JsonSerde.createDeserializer' case.InstanceType [] ""
+        //printfn "Serialization result: %s" <| Fable.SimpleJson.SimpleJson.toString json
+        let deserializer = JsonSerde.createDeserializer' case.InstanceType JsonSerde.defaultDeserializationOptions
         let copy = deserializer json
         case.Comparer "Copy should be equal to original" copy case.Instance
 
 let jsonEvolutionTest (case:EvolutionCase) =
     testCase case.Name <| fun _ ->
-        let serializer = JsonSerde.createSerializer' case.InstanceType []
+        let serializer = JsonSerde.createSerializer' case.InstanceType JsonSerde.defaultSerializationOptions
         let json = serializer case.Instance
-        //printfn "Serialization result: %s" <| SimpleJson.toString json
-        let deserializer = JsonSerde.createDeserializer' case.ExpectedType [] case.Annotations
+        //printfn "Serialization result: %s" <| Fable.SimpleJson.SimpleJson.toString json
+        let deserializer =
+            {JsonSerde.defaultDeserializationOptions with Annotations = case.Annotations; ForwardCompatibleMode = true}
+            |> JsonSerde.createDeserializer' case.ExpectedType
         let copy = deserializer json
         case.Comparer "Deserialized value should be equal to expected" copy case.ExpectedInstance
 

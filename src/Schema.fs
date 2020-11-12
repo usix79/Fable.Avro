@@ -31,7 +31,11 @@ type SchemaError =
     | NotSupportedType of Type
     | NotSupportedTypeInfo of TypeInfo
 
+type SchemaOptions = {CustomRules: CustomRule list; Annotations: String; StubDefaultValues: bool}
+
 module Schema =
+
+    let defaultOptions = {CustomRules = CustomRule.buidInRules; Annotations = ""; StubDefaultValues = false}
 
     let private canonicalName ns (name:string) =
         match name.LastIndexOf "." with
@@ -141,7 +145,7 @@ module Schema =
             props.TryFind name |> Option.bind (function | JArray list -> Some list | _ -> None)
 
         let field (props:Map<string,Json>) =
-            {|  Name = getFullName props; Aliases = getAliases "" props; Default = props.TryFind "default"  |}
+            {| Name = getFullName props; Aliases = getAliases "" props; Default = props.TryFind "default" |}
 
         let records =
             getProps json
@@ -181,6 +185,11 @@ module Schema =
         | TypeInfo.Long -> if isRoot then "long" else "Int64"
         | TypeInfo.Float32 -> if isRoot then "float" else "Float"
         | TypeInfo.Float -> if isRoot then "double" else "Double"
+        | TypeInfo.Byte -> if isRoot then "int" else "Byte"
+        | TypeInfo.Short -> if isRoot then "int" else "Short"
+        | TypeInfo.UInt16 -> if isRoot then "int" else "UInt16"
+        | TypeInfo.UInt32 -> if isRoot then "int" else "UInt32"
+        | TypeInfo.UInt64 -> if isRoot then "long" else "UInt64"
         | TypeInfo.Array f ->
             match f() with
             | TypeInfo.Byte when isRoot -> "bytes"
@@ -233,6 +242,69 @@ module Schema =
             |> String.concat "_And_"
             |> (sprintf "%s_Of_%s" (name.Substring(0, idx)))
 
+    let rec internal stub customRules = function
+        | TypeInfo.String -> JString ""
+        | TypeInfo.Bool -> JBool false
+        | TypeInfo.Byte
+        | TypeInfo.Short
+        | TypeInfo.UInt16
+        | TypeInfo.Int32
+        | TypeInfo.UInt32
+        | TypeInfo.Long
+        | TypeInfo.UInt64
+        | TypeInfo.Float32
+        | TypeInfo.Float -> JNumber 0.
+        | TypeInfo.Array _
+        | TypeInfo.ResizeArray _
+        | TypeInfo.HashSet _
+        | TypeInfo.Set _
+        | TypeInfo.Seq _
+        | TypeInfo.List _ -> JArray []
+        | TypeInfo.Map _
+        | TypeInfo.Dictionary _ -> JObject Map.empty
+        | TypeInfo.Enum f ->
+            let _, type' = f()
+            [|for obj in Enum.GetValues type' do obj|]
+            |> Array.sortBy (fun obj -> Int32.Parse (obj.ToString()))
+            |> Array.head
+            |> fun obj -> Enum.GetName(type', obj) |> JString
+        | TypeInfo.Record f ->
+            let fieldsInfo, _ = f()
+            fieldsInfo
+            |> Array.map (fun fi -> fi.FieldName, stub customRules fi.FieldType)
+            |> Map.ofArray
+            |> JObject
+        | TypeInfo.Tuple f ->
+            f()
+            |> Array.mapi (fun idx ti -> sprintf"Item%d" (idx+1),stub customRules ti)
+            |> Map.ofArray
+            |> JObject
+        | TypeInfo.Option f -> JNull
+        | TypeInfo.Union f ->
+            let casesInfo, unionType = f()
+            let case = casesInfo.[0]
+            let recordJson =
+                Array.zip (case.Info.GetFields()) case.CaseTypes
+                |> Array.map (fun (pi,ti) -> pi.Name, stub customRules ti)
+                |> Map.ofArray
+                |> JObject
+            [(nameFromType unionType) + "." + case.Info.Name, recordJson]
+            |> Map.ofList
+            |> JObject
+
+        | TypeInfo.Any f ->
+            let type' = f()
+            match customRules |> List.tryFind (fun t -> type' = t.InstanceType) with
+            | Some rule -> rule.StubValue
+            | None -> failwithf "Can not resolve stub for: %A" type'
+        | TypeInfo.Decimal -> JString "0"
+        | TypeInfo.BigInt -> JString "0"
+        | TypeInfo.Guid -> JString "00000000-0000-0000-0000-000000000000"
+        | TypeInfo.DateTime -> JString "1970-01-01T00:00:00.000Z"
+        | TypeInfo.DateTimeOffset -> JString "1970-01-01T00:00:00.000+00:00"
+        | TypeInfo.TimeSpan -> JNumber 0.
+        | wrong -> failwithf "Can not resolve stub for: %A" wrong
+
     let rec private traverse f list =
 
         let apply fResult xResult =
@@ -249,11 +321,11 @@ module Schema =
         | [] -> Ok []
         | head::tail -> Ok cons <*> (f head |> Result.mapError List.singleton) <*> (traverse f tail)
 
-    let generate (customRules:CustomRule list) (annotations:String) (type':Type) : Result<Schema,SchemaError> =
+    let generate (options:SchemaOptions) (type':Type) : Result<Schema,SchemaError> =
         let cache = Dictionary<string, Schema>()
-        let annotator = Annotator(annotations)
+        let annotator = Annotator(options.Annotations)
         let typeInfo = createTypeInfo type'
-        let customRules = customRules @ CustomRule.buidInRules
+        let customRules = options.CustomRules
 
         let rec gen (ti:TypeInfo) : Result<Schema,SchemaError> =
             match ti with
@@ -296,7 +368,8 @@ module Schema =
                                 |> Array.map (fun obj -> Enum.GetName(type', obj))
                             Default =
                                 annotator.Enum name
-                                |> Option.bind (fun r -> r.Default)}
+                                |> Option.bind (fun r -> r.Default)
+                                |> Option.orElseWith(fun () -> if options.StubDefaultValues then stub customRules ti |> Some else None)}
                 cache.[name] <- schema
                 schema |> Ok
             | TypeInfo.Record f ->
@@ -332,7 +405,7 @@ module Schema =
             | TypeInfo.Guid -> String |> Ok
             | TypeInfo.DateTime -> String |> Ok
             | TypeInfo.DateTimeOffset -> String |> Ok
-            | TypeInfo.TimeSpan -> String |> Ok
+            | TypeInfo.TimeSpan -> Int |> Ok
             | TypeInfo.Any f ->
                 let type' = f()
                 match customRules |> List.tryFind (fun t -> type' = t.InstanceType) with
@@ -358,11 +431,15 @@ module Schema =
                     gen typeInfo
                     |> Result.map (fun fieldSchema ->
                         let defValue =
-                            match fieldSchema with
-                            | Union [|Null;_|] -> Some JNull
-                            | _ -> None
+                            if options.StubDefaultValues then
+                                match typeInfo, stub customRules typeInfo with
+                                | TypeInfo.Union f, JObject props -> props |> Map.toSeq |> Seq.head |> snd // extract json of the stub case
+                                | _,json -> json
+                                |> Some
+                            else None
+
                         match annotator.Field recordName fieldName with
-                        | Some a -> { Name = fieldName; Aliases = a.Aliases; Type = fieldSchema; Default = a.Default}
+                        | Some a -> { Name = fieldName; Aliases = a.Aliases; Type = fieldSchema; Default = a.Default |> Option.orElse defValue}
                         | None -> { Name = fieldName; Aliases = []; Type = fieldSchema; Default = defValue}))
                 |> Result.map (fun recordFields -> fields.AddRange(recordFields); schema)
                 |> Result.mapError AggregateError

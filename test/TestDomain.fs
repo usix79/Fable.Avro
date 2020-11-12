@@ -111,7 +111,7 @@ type Basket = list<LineItem>
 // Union evolution
 
 type UnionV1 =
-    | UnknownCase
+    | UnknownCase of string
     | Case1 of string
 
 type RecordV1 = {
@@ -119,10 +119,16 @@ type RecordV1 = {
 }
 
 type UnionV2 =
-    | UnknownCase
+    | UnknownCase of string
+    | Case1 of string
     | Case2
     | Case3 of string
 
 type RecordV2 = {
     Union : UnionV2
+}
+
+type RecordV3 = {
+    Union : UnionV2
+    Union2 : UnionV2
 }

@@ -9,12 +9,13 @@ let expectSchemasEqual (actual:Schema) (expected:Schema) =
     "Schemas should be equal"
     |> Expect.equal (actual |> Schema.toString) (expected |> Schema.toString)
 
-let generateSchema' ann type' =
-    match Schema.generate [] ann type' with
+let generateSchema' ann withStubs type' =
+    match Schema.generate {Schema.defaultOptions with Annotations = ann; StubDefaultValues = withStubs} type' with
     | Ok schema -> schema
     | Error err -> failwithf "Schema error: %A" err
 
-let generateSchema = generateSchema' ""
+let generateSchema = generateSchema' "" false
+let genSchemaWithStubs = generateSchema' "" true
 
 let schemaTests =
     [
@@ -27,6 +28,11 @@ let schemaTests =
                 "float", typeof<float32>
                 "double", typeof<float>
                 "bytes", typeof<byte array>
+                "int",typeof<byte>
+                "int",typeof<int16>
+                "int",typeof<uint16>
+                "int",typeof<uint32>
+                "long",typeof<uint64>
             ]
             for typeName,type' in pairs ->
                 testCase typeName <| fun _ ->
@@ -170,7 +176,7 @@ let schemaTests =
                         "name":"Foo.Bar.RecordWithOption",
                         "fields":[
                             {"name":"Id","type":"int"},
-                            {"name":"Id2","type":["null","int"],"default":null}
+                            {"name":"Id2","type":["null","int"]}
                         ]
                     }"""
         ]
@@ -183,7 +189,7 @@ let schemaTests =
                         "type":"record",
                         "name":"Foo.Bar.GenericRecord_Of_Nullable_String",
                         "fields":[
-                            {"name":"Value","type":["null","string"],"default":null}
+                            {"name":"Value","type":["null","string"]}
                         ]
                     }"""
             testCase "Record<List<Option>>" <| fun _ ->
@@ -228,7 +234,7 @@ let schemaTests =
             testCase "TimeSpan" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<System.TimeSpan>
-                    <| Schema.ofString """{"type": "string"}"""
+                    <| Schema.ofString """{"type": "int"}"""
             testCase "Uri" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<System.Uri>
@@ -251,7 +257,7 @@ let schemaTests =
                         ]}
                     ]}"""
                 expectSchemasEqual
-                    <| generateSchema' ann typeof<NewRecord>
+                    <| generateSchema' ann false typeof<NewRecord>
                     <| Schema.ofString """{
                         "type": "record",
                         "name": "Foo.Bar.NewRecord",
@@ -272,7 +278,7 @@ let schemaTests =
                         }
                     ]}"""
                 expectSchemasEqual
-                    <| generateSchema' ann typeof<NewTestState>
+                    <| generateSchema' ann false typeof<NewTestState>
                     <| Schema.ofString """{
                         "type": "enum",
                         "name": "Foo.Bar.NewTestState",
@@ -359,4 +365,136 @@ let schemaTests =
                             }
                         ]}"""
         ]
+
+        testList "Stub Default Values" [
+            testCase "Decimal" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<string>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_String","fields":[{"name":"Value","type":"string","default":""}]}"""
+            testCase "Bool" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<bool>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Boolean","fields":[{"name":"Value","type":"boolean","default":false}]}"""
+            testCase "Int" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<int>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Int32","fields":[{"name":"Value","type":"int","default":0}]}"""
+            testCase "Bytes" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<byte []>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Array_Of_Byte","fields":[{"name":"Value","type":"bytes","default":[]}]}"""
+            testCase "List" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<string list>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Array_Of_String","fields":[{"name":"Value","type":{"type": "array","items": "string"},"default":[]}]}"""
+            testCase "Map" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<Map<string,string>>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Map_Of_String","fields":[{"name":"Value","type":{"type": "map", "values": "string"},"default":{}}]}"""
+            testCase "Enum" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<TestState>
+                    <| Schema.ofString """{"type": "enum", "name": "Foo.Bar.TestState", "symbols": ["Green", "Yellow", "Red"], "default":"Green"}"""
+            testCase "SimpleRecord" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<SimpleRecord>
+                    <| Schema.ofString """{
+                        "type": "record",
+                        "name": "Foo.Bar.SimpleRecord",
+                        "fields" : [
+                            {"name": "Id", "type": "int", "default": 0},
+                            {"name": "Name", "type": "string", "default": ""},
+                            {"name": "Version", "type": "long", "default": 0}
+                        ]
+                    }"""
+            testCase "ParentRecord" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<ParentRecord>
+                    <| Schema.ofString """{
+                        "type":"record",
+                        "name":"Foo.Bar.ParentRecord",
+                        "fields":[
+                            {
+                                "name":"Chield1",
+                                "type":{
+                                    "type":"record",
+                                    "name":"Foo.Bar.SimpleRecord",
+                                    "fields":[
+                                        {"name": "Id", "type": "int", "default": 0},
+                                        {"name": "Name", "type": "string", "default": ""},
+                                        {"name": "Version", "type": "long", "default": 0}
+                                    ]
+                                },
+                                "default": {"Id":0, "Name":"", "Version": 0}
+                            },
+                            {
+                                "name":"Chield2",
+                                "type":"SimpleRecord",
+                                "default": {"Id":0, "Name":"", "Version": 0}
+                            }
+                        ]}"""
+            testCase "Option in a Record" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<RecordWithOption>
+                    <| Schema.ofString """{
+                        "type":"record",
+                        "name":"Foo.Bar.RecordWithOption",
+                        "fields":[
+                            {"name":"Id","type":"int", "default":0},
+                            {"name":"Id2","type":["null","int"], "default":null}
+                        ]
+                    }"""
+            testCase "Tuple" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<int*string>>
+                    <| Schema.ofString """{
+                        "type":"record",
+                        "name":"Foo.Bar.GenericRecord_Of_Tuple_Of_Int32_And_String",
+                        "fields":[
+                            {
+                                "name":"Value",
+                                "type":{
+                                    "type": "record",
+                                    "namespace": "",
+                                    "name": "Tuple_Of_Int32_And_String",
+                                    "fields" : [
+                                        {"name": "Item1", "type": "int", "default": 0},
+                                        {"name": "Item2", "type": "string", "default": ""}
+                                    ]
+                                },
+                                "default": {"Item1":0,"Item2":""}
+                            }
+                        ]
+                        }"""
+
+            testCase "BinaryTree" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<BinaryTree>
+                    <| Schema.ofString """{
+                        "type":[
+                            {
+                                "type":"record",
+                                "name":"Leaf",
+                                "namespace":"Foo.Bar.BinaryTree",
+                                "fields":[
+                                    {"name":"value","type":"string", "default": ""}
+                                ]
+                            },
+                            {
+                                "type":"record",
+                                "name":"Node",
+                                "namespace":"Foo.Bar.BinaryTree",
+                                "fields":[
+                                    {"name":"left","type":["Leaf","Node"], "default": {"value": ""}},
+                                    {"name":"right","type":["Leaf","Node"], "default": {"value": ""}}
+                                ]
+                            }
+                        ]}"""
+            testCase "UriInGenericRecord" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<System.Uri>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Uri","fields":[{"name":"Value","type":"string", "default":""}]}"""
+
+        ]
+
     ] |> testList "Schema"
