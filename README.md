@@ -364,7 +364,7 @@ Deserializing of the Enums is performed by the same algorithm.
 
 ## Forward compatibility for DU
 
-According to Avro standard, adding a new type at a union is a non forward compatible change ([see](https://avro.apache.org/docs/current/spec.html#Schema+Resolution)).
+According to Avro standard, adding a new case at a union is a non forward compatible change ([see](https://avro.apache.org/docs/current/spec.html#Schema+Resolution)).
 
 Let's pretend that first version of our domain looks like:
 ```fsharp
