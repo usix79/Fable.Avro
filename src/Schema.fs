@@ -254,7 +254,10 @@ module Schema =
         | TypeInfo.UInt64
         | TypeInfo.Float32
         | TypeInfo.Float -> JNumber 0.
-        | TypeInfo.Array _
+        | TypeInfo.Array f ->
+            match f() with
+            | TypeInfo.Byte -> JString ""
+            | _ -> JArray []
         | TypeInfo.ResizeArray _
         | TypeInfo.HashSet _
         | TypeInfo.Set _
