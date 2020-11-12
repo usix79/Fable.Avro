@@ -6,8 +6,8 @@ open Fable.SimpleJson
 type CustomRule = {
     InstanceType: System.Type;
     SurrogateType: System.Type
-    SerializationCast: obj -> obj
-    DeserializationCast: obj -> obj
+    CastToSurrogate: obj -> obj
+    CastFromSurrogate: obj -> obj
     StubValue: Json
 }
 
@@ -16,8 +16,8 @@ module CustomRule =
         {
             InstanceType = typeof<Uri>
             SurrogateType = typeof<string>
-            SerializationCast = fun v -> v.ToString() |> unbox
-            DeserializationCast = fun v -> Uri(unbox(v)) |> unbox
+            CastToSurrogate = fun v -> v.ToString() |> unbox
+            CastFromSurrogate = fun v -> Uri(unbox(v)) |> unbox
             StubValue =  JString ""
         }
     ]

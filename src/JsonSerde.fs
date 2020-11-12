@@ -10,8 +10,8 @@ let internal rulesMap (rules:CustomRule list) =
     |> List.map(fun rule ->
         rule.InstanceType.Name,
         {|  SurrogateTypeInfo = createTypeInfo rule.SurrogateType
-            SerializationCast = rule.SerializationCast
-            DeserializationCast = rule.DeserializationCast|})
+            CastToSurrogate = rule.CastToSurrogate
+            CastFromSurrogate = rule.CastFromSurrogate|})
     |> Map.ofList
 
 type SerializationOptions = {CustomRules: CustomRule list}
@@ -111,7 +111,7 @@ let createSerializer'(type': Type) (options:SerializationOptions): obj -> Json =
             | TypeInfo.Any f ->
                 let type' = f()
                 match rulesMap.TryFind type'.Name with
-                | Some rule -> parse (rule.SerializationCast value) rule.SurrogateTypeInfo
+                | Some rule -> parse (rule.CastToSurrogate value) rule.SurrogateTypeInfo
                 | _ -> failwithf "Serialization of the type is not supported: %A" type'
             | wrong -> failwithf "Serialization of the type is not supported: %A" wrong
         and parseArray elTypeInfo elements  =
@@ -129,9 +129,9 @@ let inline createSerializer<'T> (options:SerializationOptions): 'T -> Result<Jso
         with
         | err -> Error err.Message
 
-type DeserializationOptions = {CustomRules: CustomRule list; Annotations: string; ForwardCompatibleMode: bool}
+type DeserializationOptions = {CustomRules: CustomRule list; Annotations: string; EvolutionTolerantMode: bool}
 
-let defaultDeserializationOptions = {CustomRules = CustomRule.buidInRules; Annotations = ""; ForwardCompatibleMode = true}
+let defaultDeserializationOptions = {CustomRules = CustomRule.buidInRules; Annotations = ""; EvolutionTolerantMode = true}
 
 let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> obj =
     let ti = createTypeInfo type'
@@ -188,8 +188,8 @@ let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> 
                     |> Option.bind (fun r -> r.Default)
                     |> Option.bind (function JString v -> Enum.Parse(type', v) |> Some | _ -> None)
                     |> Option.defaultWith (fun () ->
-                        if options.ForwardCompatibleMode then Schema.stub options.CustomRules ti |> parse ti
-                        else failwithf "'%s' was not found in %s set ForwardCompatibleMode=true for assign stub value" v (type'.Name))
+                        if options.EvolutionTolerantMode then Schema.stub options.CustomRules ti |> parse ti
+                        else failwithf "'%s' was not found in %s set ForwardCompatibleMode=true for assign stub value, %A" v (type'.Name) err)
             | JArray elements, TypeInfo.List f -> parseArray (f()) elements |> unbox
             | JArray elements, TypeInfo.Array f -> parseArray (f()) elements |> Array.ofList |> unbox
             | JArray elements, TypeInfo.ResizeArray f -> parseArray (f()) elements |> ResizeArray |> unbox
@@ -233,7 +233,7 @@ let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> 
                                 fieldValue props (fun () -> caseName) pi.Name case.CaseTypes.[idx])
                         FSharpValue.MakeUnion(case.Info, unionFields))
                     |> Option.defaultWith (fun () ->
-                        if options.ForwardCompatibleMode then
+                        if options.EvolutionTolerantMode then
                             Schema.stub options.CustomRules ti
                             |> parse ti
                         else failwithf "UnionCase:%s missed, set ForwardCompatibleMode=true for assign stub value" caseName)
@@ -258,7 +258,7 @@ let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> 
                 match rulesMap.TryFind type'.Name with
                 | Some rule ->
                     parse rule.SurrogateTypeInfo json
-                    |> rule.DeserializationCast
+                    |> rule.CastFromSurrogate
                 | _ -> failwithf "Deserialization of the type is not supported: %A" (f())
             | wrong -> failwithf "Deserialization of the type is not supported: %A" wrong
         and parseArray elTypeInfo elements =
@@ -293,7 +293,7 @@ let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> 
                                 | _ -> defJson)
                             |> Option.map (parse fieldTypeInfo))
                         |> Option.defaultWith (fun () ->
-                            if options.ForwardCompatibleMode then
+                            if options.EvolutionTolerantMode then
                                 Schema.stub options.CustomRules fieldTypeInfo
                                 |> parse fieldTypeInfo
                             else failwithf "Record:%s Field:%s missed, set ForwardCompatibleMode=true for assign stub value" recordName fieldName)
