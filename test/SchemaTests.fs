@@ -212,11 +212,11 @@ let schemaTests =
             testCase "Decimal" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<decimal>
-                    <| Schema.ofString """{"type": "bytes", "logicalType": "decimal", "precision": 29, "scale": 14}"""
+                    <| Schema.ofString """{"type": "string"}"""
             testCase "GUID" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<System.Guid>
-                    <| Schema.ofString """{"type": "fixed", "name": "guid", "size": 16}"""
+                    <| Schema.ofString """{"type": "string"}"""
             testCase "DateTime" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<System.DateTime>
@@ -297,7 +297,7 @@ let schemaTests =
                                     "type":"record",
                                     "name":"Foo.Bar.Price.Price",
                                     "fields":[
-                                        {"name":"Item","type":{"type":"bytes","logicalType":"decimal","precision":29,"scale":14}}
+                                        {"name":"Item","type":"string"}
                                     ]
                                 }
                             ]}
@@ -319,10 +319,10 @@ let schemaTests =
                                         "fields":[
                                             {"name":"Item1","type":"string"},
                                             {"name":"Item2","type":"string"},
-                                            {"name":"Item3","type":{"type":"bytes","logicalType":"decimal","precision":29,"scale":14}}
+                                            {"name":"Item3","type":"string"}
                                         ]
                                     }},
-                                    {"name":"Item2","type":{"type":"bytes","logicalType":"decimal","precision":29,"scale":14}}
+                                    {"name":"Item2","type":"string"}
                                 ]
                             },
                             {
@@ -349,9 +349,7 @@ let schemaTests =
                                             "fields":[{"name":"Item","type":"string"}]
                                         }]
                                     },
-                                    {"name":"Item2","type":
-                                        {"type":"bytes","logicalType":"decimal","precision":29,"scale":14}
-                                    }
+                                    {"name":"Item2","type": "string"}
                                 ]
                             },
                             {

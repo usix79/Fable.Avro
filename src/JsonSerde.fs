@@ -37,7 +37,16 @@ let createSerializer'(type': Type) (customRules:CustomRule list): obj -> Json =
                 let (_, type') = f()
                 Enum.GetName(type',value) |> JString
             | TypeInfo.List f -> value |> unbox<obj list> |> (parseArray(f()))
-            | TypeInfo.Array f -> value |> unbox<obj []> |> List.ofArray |> (parseArray(f()))
+            | TypeInfo.Array f ->
+                match f() with
+                | TypeInfo.Byte ->
+                    let hex =
+                        unbox<byte []>(value)
+                        |> Array.map (fun b -> b.ToString("X2"))
+                        |> Seq.ofArray
+                        |> String.concat ""
+                    JString ("\\u" + hex)
+                | ti -> value |> unbox<obj []> |> List.ofArray |> (parseArray ti)
             | TypeInfo.ResizeArray f -> value |> unbox<ResizeArray<obj>> |> List.ofSeq |> (parseArray(f()))
             | TypeInfo.Set f -> value |> unbox<Set<IComparable>> |> List.ofSeq |> List.map box |> (parseArray(f()))
             | TypeInfo.HashSet f -> value |> unbox<Collections.Generic.HashSet<obj>> |> List.ofSeq |> List.map box |> (parseArray(f()))
@@ -79,7 +88,7 @@ let createSerializer'(type': Type) (customRules:CustomRule list): obj -> Json =
                     |> Array.mapi (fun idx pi -> pi.Name, parse fieldValues.[idx] usedCase.CaseTypes.[idx])
                     |> Map.ofArray
                     |> JObject
-                [usedCaseInfo.Name, caseRecord]
+                [(Schema.nameFromType unionType) + "." + usedCaseInfo.Name, caseRecord]
                 |> Map.ofList
                 |> JObject
             | TypeInfo.Option f ->
@@ -88,7 +97,7 @@ let createSerializer'(type': Type) (customRules:CustomRule list): obj -> Json =
                 | Some v ->
                     let typeInfo = f()
                     [Schema.nameFromTypeInfo true typeInfo, parse v typeInfo] |> Map.ofList |> JObject
-            | TypeInfo.Decimal -> unbox value |> float |> JNumber
+            | TypeInfo.Decimal -> (unbox<decimal> value).ToString() |> JString
             | TypeInfo.Guid -> (unbox<Guid> value).ToString() |> JString
             | TypeInfo.DateTime -> (unbox<DateTime> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
             | TypeInfo.DateTimeOffset -> (unbox<DateTimeOffset> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
@@ -128,8 +137,9 @@ let createDeserializer' (type': Type) (customRules:CustomRule list) (annotations
                 cases
                 |> List.ofArray
                 |> List.collect (fun case ->
-                    (case.CaseName,case) ::
-                        (ann.Record (unionName + "." + case.CaseName)
+                    let caseFullName = unionName + "." + case.CaseName
+                    (caseFullName,case) ::
+                        (ann.Record caseFullName
                             |> Option.map (fun r ->
                                 r.Aliases
                                 |> List.map (fun alias -> alias,case))
@@ -152,6 +162,11 @@ let createDeserializer' (type': Type) (customRules:CustomRule list) (annotations
             | JNumber v, TypeInfo.UInt64 -> v |> uint64 |> unbox
             | JNumber v, TypeInfo.Float32 -> v |> float32 |> unbox
             | JNumber v, TypeInfo.Float -> v |> unbox
+            | JString v, TypeInfo.Array f ->    // "\uFF00AA124342"
+              Array.unfold (fun idx ->
+                if (idx * 2 + 4) <= v.Length then Some(v.Substring(idx * 2 + 2, 2)) else None
+                |> Option.map (fun v -> Convert.ToByte(v, 16), (idx + 1))) 0
+              |> unbox
             | JString v, TypeInfo.Enum f ->
                 let (_, type') = f()
                 try
@@ -214,6 +229,7 @@ let createDeserializer' (type': Type) (customRules:CustomRule list) (annotations
                     unbox Some parsedOptional
                 | None -> failwith "Option case should be represented as jobject with one property"
             | JNumber v, TypeInfo.Decimal -> v |> decimal |> unbox
+            | JString v, TypeInfo.Decimal -> Decimal.Parse(v, Globalization.NumberStyles.Any) |> unbox
             | JString v, TypeInfo.Guid -> Guid.Parse v |> unbox
             | JString v, TypeInfo.DateTime -> DateTime.Parse(v, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) |> unbox
             | JString v, TypeInfo.DateTimeOffset -> DateTimeOffset.Parse(v, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) |> unbox

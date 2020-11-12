@@ -19,24 +19,17 @@ type Schema =
     | Map of MapSchema
     | Union of Schema array
     | Fixed of FixedSchema
-    | Decimal of DecimalSchema
 and RecordSchema = {Name: string; Aliases: string list; Fields: List<RecordField>}
 and RecordField = {Name: string; Aliases: string list; Type: Schema; Default: Json option}
 and EnumSchema = {Name: string; Aliases: string list; Symbols: string array; Default: Json option}
 and ArraySchema = {Items: Schema; Default: Json option}
 and MapSchema = {Values: Schema; Default: Json option}
 and FixedSchema = {Name: string; Aliases: string list; Size: int}
-and DecimalSchema = {Precision: int; Scale: int}
 
 type SchemaError =
     | AggregateError of SchemaError list
     | NotSupportedType of Type
     | NotSupportedTypeInfo of TypeInfo
-
-type Cache<'TKey,'TValue when 'TKey : equality>() =
-    inherit Dictionary<'TKey, 'TValue>()
-    member this.AddValue key value' = this.[key] <- value'; value'
-    member this.TryFind key = match this.TryGetValue key with true, schema -> Some schema | _ -> None
 
 module Schema =
 
@@ -77,7 +70,7 @@ module Schema =
     let private getDefault (props:Map<string,Json>) = props.TryFind "default"
 
     let ofString (jsonString:string) =
-        let cache = Cache<string,Schema>()
+        let cache = Dictionary<string,Schema>()
 
         let rec parse ns = function
             | JNull -> Null
@@ -99,17 +92,21 @@ module Schema =
                 | JString "map" -> Map { Values = parse ns props.["values"]; Default = getDefault props}
                 | JString "enum" ->
                     let ns, name = getName ns props
-                    Enum {  Name = name;
-                            Aliases = getAliases ns props;
-                            Symbols = getSymbols props;
-                            Default = getDefault props}
-                    |> cache.AddValue name
+                    let schema =
+                        Enum {  Name = name;
+                                Aliases = getAliases ns props;
+                                Symbols = getSymbols props;
+                                Default = getDefault props}
+                    cache.[name] <- schema
+                    schema
                 | JString "record" ->
                     let ns, name = getName ns props
                     let fields = List<RecordField>()
                     let schema =
-                        Record {Name = name; Aliases = getAliases ns props; Fields = fields}
-                        |> cache.AddValue name
+                        Record {    Name = name;
+                                    Aliases = getAliases ns props;
+                                    Fields = fields}
+                    cache.[name] <- schema
                     match props.["fields"] with
                     | JArray list ->
                         list |> List.iter (fun fieldJson ->
@@ -125,17 +122,15 @@ module Schema =
                     | wrongJson -> failwithf "wrong json for 'fields' property %A" wrongJson
                 | JString "fixed" ->
                     let ns, name = getName ns props
-                    Fixed { Name = name; Aliases = getAliases ns props; Size = getNumberProp props "size" |> int}
-                    |> cache.AddValue name
-                | JString "bytes" when props.TryFind "logicalType" = Some (JString "decimal") ->
-                    Decimal {Precision = getNumberProp props "precision" |> int; Scale = getNumberProp props "scale" |> int}
+                    let schema = Fixed { Name = name; Aliases = getAliases ns props; Size = getNumberProp props "size" |> int}
+                    cache.[name] <- schema
+                    schema
                 | json -> parse ns json
             | JArray list -> list |> List.map (parse ns) |> Array.ofList |> Union
             | wrongJson -> failwithf "wrong json %A" wrongJson
 
         SimpleJson.parse jsonString
         |> parse ""
-
 
     type internal Annotator(jsonString:String) =
         let json = SimpleJson.tryParse jsonString |> Option.defaultValue (JObject Map.empty)
@@ -148,28 +143,22 @@ module Schema =
         let field (props:Map<string,Json>) =
             {|  Name = getFullName props; Aliases = getAliases "" props; Default = props.TryFind "default"  |}
 
-        let records,enums,decimals =
+        let records =
             getProps json
             |> getList "records"
             |> Option.map (List.map (fun json ->
                 let props = getProps json
                 {|  Name = getFullName props
                     Aliases = getAliases "" props
-                    Fields =  getList "fields" props |> Option.map (List.map (getProps >> field)) |})),
+                    Fields =  getList "fields" props |> Option.map (List.map (getProps >> field)) |}))
+        let enums =
             getProps json
             |> getList "enums"
             |> Option.map (List.map (fun json ->
                 let props = getProps json
                 {|  Name = getFullName props
                     Aliases = getAliases "" props
-                    Default = props.TryFind "default" |})),
-            getProps json
-            |> getList "decimals"
-            |> Option.map (List.map (fun json ->
-                let props = getProps json
-                {|  RecordName = getStringProp props "record"
-                    FieldName = getStringProp props "field"
-                    Scale = getNumberProp props "scale" |> int|}))
+                    Default = props.TryFind "default" |}))
 
         member _.Enum name =
             enums
@@ -185,9 +174,6 @@ module Schema =
                 r.Fields
                 |> Option.bind (List.tryFind (fun fr -> fr.Name = fieldName)))
 
-        member _.Decimal recordName fieldName =
-            decimals |> Option.bind(List.tryFind (fun r -> r.RecordName = recordName && r.FieldName = fieldName))
-
     let rec nameFromTypeInfo isRoot = function
         | TypeInfo.String -> if isRoot then "string" else "String"
         | TypeInfo.Bool -> if isRoot then "boolean" else "Boolean"
@@ -195,16 +181,15 @@ module Schema =
         | TypeInfo.Long -> if isRoot then "long" else "Int64"
         | TypeInfo.Float32 -> if isRoot then "float" else "Float"
         | TypeInfo.Float -> if isRoot then "double" else "Double"
-        | TypeInfo.Decimal -> if isRoot then "bytes" else "Decimal"
-        | TypeInfo.Array f
-        | TypeInfo.ResizeArray f
-        | TypeInfo.HashSet f
-        | TypeInfo.Set f
-        | TypeInfo.Seq f -> "Array_Of_" + nameFromTypeInfo false (f())
-        | TypeInfo.List f ->
+        | TypeInfo.Array f ->
             match f() with
             | TypeInfo.Byte when isRoot -> "bytes"
             | _ -> "Array_Of_" + nameFromTypeInfo false (f())
+        | TypeInfo.ResizeArray f
+        | TypeInfo.HashSet f
+        | TypeInfo.Set f
+        | TypeInfo.Seq f
+        | TypeInfo.List f -> "Array_Of_" + nameFromTypeInfo false (f())
         | TypeInfo.Map f ->
             let (_, valueTypeInfo) = f()
             "Map_Of_" + nameFromTypeInfo false valueTypeInfo
@@ -230,6 +215,7 @@ module Schema =
         | TypeInfo.DateTime  -> if isRoot then "string" else "DateTime"
         | TypeInfo.DateTimeOffset -> if isRoot then "string" else "DateTimeOffset"
         | TypeInfo.TimeSpan -> if isRoot then "int" else "TimeSpan"
+        | TypeInfo.Decimal -> if isRoot then "string" else "Decimal"
         | TypeInfo.BigInt -> if isRoot then "string" else "BigInt"
         | wrongTypeInfo -> failwithf "Name for the type is not supported: %A" wrongTypeInfo
     and nameFromType (type':Type) : string =
@@ -264,7 +250,7 @@ module Schema =
         | head::tail -> Ok cons <*> (f head |> Result.mapError List.singleton) <*> (traverse f tail)
 
     let generate (customRules:CustomRule list) (annotations:String) (type':Type) : Result<Schema,SchemaError> =
-        let cache = Cache<string, Schema>()
+        let cache = Dictionary<string, Schema>()
         let annotator = Annotator(annotations)
         let typeInfo = createTypeInfo type'
         let customRules = customRules @ CustomRule.buidInRules
@@ -273,20 +259,25 @@ module Schema =
             match ti with
             | TypeInfo.String -> String |> Ok
             | TypeInfo.Bool -> Boolean |> Ok
+            | TypeInfo.Byte -> Int |> Ok
+            | TypeInfo.Short -> Int |> Ok
+            | TypeInfo.UInt16 -> Int |> Ok
             | TypeInfo.Int32 -> Int |> Ok
+            | TypeInfo.UInt32 -> Int |> Ok
             | TypeInfo.Long -> Long |> Ok
+            | TypeInfo.UInt64 -> Long |> Ok
             | TypeInfo.Float32 -> Float |> Ok
             | TypeInfo.Float -> Double |> Ok
-            | TypeInfo.Decimal -> Decimal {Precision=29; Scale=14} |> Ok
-            | TypeInfo.Array f
+            | TypeInfo.Array f ->
+                match f() with
+                | TypeInfo.Byte -> Bytes |> Ok
+                | ti -> gen ti |> Result.map (fun schema -> Array {Items = schema; Default = None })
             | TypeInfo.ResizeArray f
             | TypeInfo.Set f
             | TypeInfo.HashSet f
             | TypeInfo.Seq f
             | TypeInfo.List f ->
-                match f() with
-                | TypeInfo.Byte -> Bytes |> Ok
-                | ti -> gen ti |> Result.map (fun schema -> Array {Items = schema; Default = None })
+                gen (f()) |> Result.map (fun schema -> Array {Items = schema; Default = None })
             | TypeInfo.Map f ->
                 let (_, valueTypeInfo) = f()
                 gen valueTypeInfo |> Result.map (fun schema ->  Map {Values = schema; Default = None })
@@ -296,18 +287,18 @@ module Schema =
             | TypeInfo.Enum f ->
                 let _, type' = f()
                 let name = nameFromTypeInfo true ti
-                Enum
-                  { Name = name
-                    Aliases = annotator.Enum name |> Option.map (fun r -> r.Aliases) |> Option.defaultValue []
-                    Symbols =
-                        [|for obj in Enum.GetValues type' do obj|]
-                        |> Array.sortBy (fun obj -> Int32.Parse (obj.ToString()))
-                        |> Array.map (fun obj -> Enum.GetName(type', obj))
-                    Default =
-                        annotator.Enum name
-                        |> Option.bind (fun r -> r.Default)}
-                |> cache.AddValue name
-                |> Ok
+                let schema =
+                    Enum {  Name = name
+                            Aliases = annotator.Enum name |> Option.map (fun r -> r.Aliases) |> Option.defaultValue []
+                            Symbols =
+                                [|for obj in Enum.GetValues type' do obj|]
+                                |> Array.sortBy (fun obj -> Int32.Parse (obj.ToString()))
+                                |> Array.map (fun obj -> Enum.GetName(type', obj))
+                            Default =
+                                annotator.Enum name
+                                |> Option.bind (fun r -> r.Default)}
+                cache.[name] <- schema
+                schema |> Ok
             | TypeInfo.Record f ->
                 let fieldsInfo, type' = f()
                 genRecord
@@ -336,9 +327,9 @@ module Schema =
                             |> List.ofArray))
                 |> Result.map (Array.ofList >> Union)
                 |> Result.mapError AggregateError
-            | TypeInfo.Byte -> Int |> Ok
-            | TypeInfo.Short -> Int |> Ok
-            | TypeInfo.Guid -> Fixed {Name = "guid"; Aliases = []; Size=16} |> Ok
+            | TypeInfo.Decimal -> String |> Ok
+            | TypeInfo.BigInt -> String |> Ok
+            | TypeInfo.Guid -> String |> Ok
             | TypeInfo.DateTime -> String |> Ok
             | TypeInfo.DateTimeOffset -> String |> Ok
             | TypeInfo.TimeSpan -> String |> Ok
@@ -349,9 +340,9 @@ module Schema =
                 | None -> NotSupportedType type' |> Error
             | ti -> NotSupportedTypeInfo ti |> Error
         and genRecord recordName (fieldsInfo:(string*TypeInfo) list) =
-            match cache.TryFind recordName with
-            | Some schema -> schema |> Ok
-            | None ->
+            match cache.TryGetValue recordName with
+            | true, schema -> schema |> Ok
+            | _ ->
                 let fields = List<RecordField>()
                 let schema =
                     Record { Name = recordName
@@ -366,14 +357,6 @@ module Schema =
                 |> traverse (fun (fieldName,typeInfo) ->
                     gen typeInfo
                     |> Result.map (fun fieldSchema ->
-                        let fieldSchema =
-                            match fieldSchema with
-                            | Decimal s ->
-                                annotator.Decimal recordName fieldName
-                                |> Option.map (fun a -> {s with Scale = a.Scale})
-                                |> Option.defaultValue s
-                                |> Decimal
-                            | _ -> fieldSchema
                         let defValue =
                             match fieldSchema with
                             | Union [|Null;_|] -> Some JNull
@@ -387,7 +370,7 @@ module Schema =
         gen typeInfo
 
     let toString (schema:Schema) =
-        let cache = Cache<string,Schema>()
+        let cache = Dictionary<string,Schema>()
 
         let typeField (typeName:string) = "type", JString typeName
         let nameField (name:string) = "name", JString name
@@ -449,12 +432,6 @@ module Schema =
                     yield! aliasesField schema.Aliases |> Option.toArray
                     "size", JNumber (float schema.Size)
                 ] |> Map.ofList |> JObject
-            | Decimal schema ->
-                    [   typeField "bytes"
-                        "logicalType", JString "decimal"
-                        "precision", JNumber (float schema.Precision)
-                        "scale", JNumber (float schema.Scale)
-                    ] |> Map.ofList |> JObject
             | wrong -> failwithf "wrong case %A" wrong
 
         parse schema

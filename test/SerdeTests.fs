@@ -6,6 +6,7 @@ open Fable.Mocha
 open Fable.Avro
 open Foo.Bar
 
+
 type Comparer = string -> obj -> obj -> unit
 type SimpleCase = {Name: string; Instance: obj; InstanceType: System.Type; Comparer: Comparer }
 type SimpleCaseList = {Name: string; Cases: SimpleCase list}
@@ -57,6 +58,7 @@ let simpleCases = [
         simpleCase "SimpleEnum" TestState.Yellow
     ]
     simpleCaseList "Array" [
+        simpleCase "bytes" [|00uy; 255uy; 12uy; 16uy; 00uy|]
         simpleCase "List" ["One"; "Two"; "Three"]
         simpleCase "Array" [|"One"; "Two"; "Three"|]
         simpleCase "Set" (["One"; "Two"; "Three"] |> Set.ofList)
@@ -160,7 +162,7 @@ let evolutionCases = [
     """{
         "records": [
             { "name": "Foo.Bar.RecordV2", "aliases": ["Foo.Bar.RecordV1"]},
-            { "name": "Foo.Bar.UnionV2.Case3", "aliases": ["Case1"]}
+            { "name": "Foo.Bar.UnionV2.Case3", "aliases": ["Foo.Bar.UnionV1.Case1"]}
         ]
     }"""
     |> evolutionCase "Rename of Union Case" ({Union = Case1 "Hello!"}:RecordV1) ({Union = Case3 "Hello!"}:RecordV2)
@@ -170,7 +172,7 @@ let evolutionCases = [
             {
                 "name": "Foo.Bar.RecordV1",
                 "fields": [
-                    {"name": "Union", "aliases": [], "default": {"UnknownCase": {}}}
+                    {"name": "Union", "aliases": [], "default": {"Foo.Bar.UnionV1.UnknownCase": {}}}
                 ]
             }
         ]
@@ -182,7 +184,7 @@ let jsonSimpleTest (case:SimpleCase) =
     testCase case.Name <| fun _ ->
         let serializer = JsonSerde.createSerializer' case.InstanceType []
         let json = serializer case.Instance
-        //printfn "Serialization result: %s" <| SimpleJson.toString json
+        printfn "Serialization result: %s" <| Fable.SimpleJson.SimpleJson.toString json
         let deserializer = JsonSerde.createDeserializer' case.InstanceType [] ""
         let copy = deserializer json
         case.Comparer "Copy should be equal to original" copy case.Instance
