@@ -324,6 +324,9 @@ Here is basic example:
         | Error err -> failwithf "Error: %A" err
     | Error err -> failwithf "Error: %A" err
 ```
+# Binary Serde
+
+NOT YET IMPLEMENTED
 
 # Evolution issues
 
