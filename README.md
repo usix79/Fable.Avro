@@ -5,8 +5,8 @@ Fable implementation of Apache Avro
 ## Overview
 
 The library generates an Avro schema by an F# type as well as serialize and deserialise an F# data in json encodings.
-It works seamlessly with (Avro.FSharp)[https://github.com/usix79/Avro.FSharp].
-Based on (Fable.SimpleJson)[https://github.com/Zaid-Ajaj/Fable.SimpleJson].
+It works seamlessly with [Avro.FSharp](https://github.com/usix79/Avro.FSharp).
+Based on [Fable.SimpleJson](https://github.com/Zaid-Ajaj/Fable.SimpleJson).
 
 ## Schema
 
