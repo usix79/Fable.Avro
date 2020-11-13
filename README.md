@@ -219,7 +219,7 @@ Following types are handled in special way
 | F# type | Avro type | Description |
 |---------|-----------|-------------|
 | `Guid` |  `string` | |
-| `Decimal` | `string` | |
+| `Decimal` | `double` | no precision loss, because behind the scene double is JS numeric |
 | `BigInt` | `string` | |
 | `DateTime` | `string` | ISO 8601 |
 | `DateTimeOffset` | `string` | ISO 8601 |
@@ -348,7 +348,7 @@ Following rules are used:
 | `Tuple` | `{"{Item1}": {DefaultValueForItem1}, ...}` |
 | `Option` | `null` |
 | `DU` | `{"Case1Field1Name": {DefaultValueForCase1Field1}, ...} stub for first case in DU` |
-| `decimal` | `"0"` |
+| `decimal` | `0` |
 | `BigInt` | `"0"` |
 | `Guid` | `"00000000-0000-0000-0000-000000000000"` |
 | `DateTime` | `"1970-01-01T00:00:00.000Z"` |

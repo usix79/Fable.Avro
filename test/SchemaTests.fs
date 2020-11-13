@@ -218,7 +218,7 @@ let schemaTests =
             testCase "Decimal" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<decimal>
-                    <| Schema.ofString """{"type": "string"}"""
+                    <| Schema.ofString """{"type": "double"}"""
             testCase "GUID" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<System.Guid>
@@ -303,7 +303,7 @@ let schemaTests =
                                     "type":"record",
                                     "name":"Foo.Bar.Price.Price",
                                     "fields":[
-                                        {"name":"Item","type":"string"}
+                                        {"name":"Item","type":"double"}
                                     ]
                                 }
                             ]}
@@ -325,10 +325,10 @@ let schemaTests =
                                         "fields":[
                                             {"name":"Item1","type":"string"},
                                             {"name":"Item2","type":"string"},
-                                            {"name":"Item3","type":"string"}
+                                            {"name":"Item3","type":"double"}
                                         ]
                                     }},
-                                    {"name":"Item2","type":"string"}
+                                    {"name":"Item2","type":"double"}
                                 ]
                             },
                             {
@@ -367,7 +367,7 @@ let schemaTests =
         ]
 
         testList "Stub Default Values" [
-            testCase "Decimal" <| fun _ ->
+            testCase "String" <| fun _ ->
                 expectSchemasEqual
                     <| genSchemaWithStubs typeof<GenericRecord<string>>
                     <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_String","fields":[{"name":"Value","type":"string","default":""}]}"""
@@ -379,10 +379,14 @@ let schemaTests =
                 expectSchemasEqual
                     <| genSchemaWithStubs typeof<GenericRecord<int>>
                     <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Int32","fields":[{"name":"Value","type":"int","default":0}]}"""
+            testCase "Decimal" <| fun _ ->
+                expectSchemasEqual
+                    <| genSchemaWithStubs typeof<GenericRecord<decimal>>
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Decimal","fields":[{"name":"Value","type":"double","default":0}]}"""
             testCase "Bytes" <| fun _ ->
                 expectSchemasEqual
                     <| genSchemaWithStubs typeof<GenericRecord<byte []>>
-                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Array_Of_Byte","fields":[{"name":"Value","type":"bytes","default":[]}]}"""
+                    <| Schema.ofString """{"type":"record","name":"Foo.Bar.GenericRecord_Of_Array_Of_Byte","fields":[{"name":"Value","type":"bytes","default":""}]}"""
             testCase "List" <| fun _ ->
                 expectSchemasEqual
                     <| genSchemaWithStubs typeof<GenericRecord<string list>>

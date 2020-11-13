@@ -242,7 +242,7 @@ let jsonEvolutionTest (case:EvolutionCase) =
         let json = serializer case.Instance
         //printfn "Serialization result: %s" <| Fable.SimpleJson.SimpleJson.toString json
         let deserializer =
-            {JsonSerde.defaultDeserializationOptions with Annotations = case.Annotations; ForwardCompatibleMode = true}
+            {JsonSerde.defaultDeserializationOptions with Annotations = case.Annotations; EvolutionTolerantMode = true}
             |> JsonSerde.createDeserializer' case.ExpectedType
         let copy = deserializer json
         case.Comparer "Deserialized value should be equal to expected" copy case.ExpectedInstance

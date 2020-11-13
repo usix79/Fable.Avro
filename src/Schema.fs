@@ -224,7 +224,7 @@ module Schema =
         | TypeInfo.DateTime  -> if isRoot then "string" else "DateTime"
         | TypeInfo.DateTimeOffset -> if isRoot then "string" else "DateTimeOffset"
         | TypeInfo.TimeSpan -> if isRoot then "int" else "TimeSpan"
-        | TypeInfo.Decimal -> if isRoot then "string" else "Decimal"
+        | TypeInfo.Decimal -> if isRoot then "double" else "Decimal"
         | TypeInfo.BigInt -> if isRoot then "string" else "BigInt"
         | wrongTypeInfo -> failwithf "Name for the type is not supported: %A" wrongTypeInfo
     and nameFromType (type':Type) : string =
@@ -300,7 +300,7 @@ module Schema =
             match customRules |> List.tryFind (fun t -> type' = t.InstanceType) with
             | Some rule -> rule.StubValue
             | None -> failwithf "Can not resolve stub for: %A" type'
-        | TypeInfo.Decimal -> JString "0"
+        | TypeInfo.Decimal -> JNumber 0.
         | TypeInfo.BigInt -> JString "0"
         | TypeInfo.Guid -> JString "00000000-0000-0000-0000-000000000000"
         | TypeInfo.DateTime -> JString "1970-01-01T00:00:00.000Z"
@@ -403,8 +403,8 @@ module Schema =
                             |> List.ofArray))
                 |> Result.map (Array.ofList >> Union)
                 |> Result.mapError AggregateError
-            | TypeInfo.Decimal -> String |> Ok
-            | TypeInfo.BigInt -> String |> Ok
+            | TypeInfo.Decimal -> Double |> Ok
+            | TypeInfo.BigInt -> Long |> Ok
             | TypeInfo.Guid -> String |> Ok
             | TypeInfo.DateTime -> String |> Ok
             | TypeInfo.DateTimeOffset -> String |> Ok

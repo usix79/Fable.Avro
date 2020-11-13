@@ -102,7 +102,7 @@ let createSerializer'(type': Type) (options:SerializationOptions): obj -> Json =
                 | Some v ->
                     let typeInfo = f()
                     [Schema.nameFromTypeInfo true typeInfo, parse v typeInfo] |> Map.ofList |> JObject
-            | TypeInfo.Decimal -> (unbox<decimal> value).ToString() |> JString
+            | TypeInfo.Decimal -> (unbox value) |> JNumber
             | TypeInfo.Guid -> (unbox<Guid> value).ToString() |> JString
             | TypeInfo.DateTime -> (unbox<DateTime> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
             | TypeInfo.DateTimeOffset -> (unbox<DateTimeOffset> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
