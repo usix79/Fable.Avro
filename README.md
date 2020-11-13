@@ -5,8 +5,8 @@ Fable implementation of Apache Avro
 ## Overview
 
 The library generates an Avro schema by an F# type as well as serialize and deserialise an F# data in json encodings.
-It works seamlessly with (Avro.FSharp)[https://github.com/usix79/Avro.FSharp].
-Based on (Fable.SimpleJson)[https://github.com/Zaid-Ajaj/Fable.SimpleJson].
+It works seamlessly with [Avro.FSharp](https://github.com/usix79/Avro.FSharp).
+Based on [Fable.SimpleJson](https://github.com/Zaid-Ajaj/Fable.SimpleJson).
 
 ## Schema
 
@@ -324,6 +324,9 @@ Here is basic example:
         | Error err -> failwithf "Error: %A" err
     | Error err -> failwithf "Error: %A" err
 ```
+# Binary Serde
+
+NOT YET IMPLEMENTED
 
 # Evolution issues
 
@@ -361,7 +364,7 @@ Deserializing of the Enums is performed by the same algorithm.
 
 ## Forward compatibility for DU
 
-According to Avro standard, adding a new type at a union is a non forward compatible change ([see](https://avro.apache.org/docs/current/spec.html#Schema+Resolution)).
+According to Avro standard, adding a new case at a union is a non forward compatible change ([see](https://avro.apache.org/docs/current/spec.html#Schema+Resolution)).
 
 Let's pretend that first version of our domain looks like:
 ```fsharp
@@ -397,7 +400,7 @@ type DomainUnion =
     | Case3
 ```
 
-`Case3` will be deserialized to `UnknownCase` (first case of the `DomainUnion`). This is true for any occasion of DU in deserialized type (whenever it is a record's field, or item in an array, or value in a map). For example array `[Case1, Case3, Case2, Case1]` will be deserialized to `[Case1, UnknownCase, UnknownCase, Case1]`. Set `DeserializationOptions.EvolutionTolerantMode=false` if you don't want the behaviour.
+`Case3` will be deserialized to `UnknownCase` (first case of the `DomainUnion`). This is true for any occasion of DU in deserialized type (whenever it is a record's field, or item in an array, or value in a map). For example, array `[Case1, Case3, Case2, Case1]` will be deserialized to `[Case1, UnknownCase, UnknownCase, Case1]`. Set `DeserializationOptions.EvolutionTolerantMode=false` if you don't want the behaviour.
 
 
 # Custom Rules
