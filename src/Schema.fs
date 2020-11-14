@@ -97,9 +97,9 @@ module Schema =
                 | JString "enum" ->
                     let ns, name = getName ns props
                     let schema =
-                        Enum {  Name = name;
-                                Aliases = getAliases ns props;
-                                Symbols = getSymbols props;
+                        Enum {  Name = name
+                                Aliases = getAliases ns props
+                                Symbols = getSymbols props
                                 Default = getDefault props}
                     cache.[name] <- schema
                     schema
@@ -116,9 +116,9 @@ module Schema =
                         list |> List.iter (fun fieldJson ->
                             match fieldJson with
                             | JObject props ->
-                                {   Name = getStringProp props "name";
-                                    Aliases = getAliases "" props;
-                                    Type = parse ns props.["type"];
+                                {   Name = getStringProp props "name"
+                                    Aliases = getAliases "" props
+                                    Type = parse ns props.["type"]
                                     Default = getDefault props}
                                 |> fields.Add
                             | wrongJson -> failwithf "wrong json for field item property %A" wrongJson)
@@ -142,7 +142,8 @@ module Schema =
         let getProps = function JObject props -> props | wrong -> failwithf "expected object but get %A" wrong
 
         let getList name (props:Map<string,Json>) =
-            props.TryFind name |> Option.bind (function | JArray list -> Some list | _ -> None)
+            props.TryFind name
+            |> Option.bind (function | JArray list -> Some list | _ -> None)
 
         let field (props:Map<string,Json>) =
             {| Name = getFullName props; Aliases = getAliases "" props; Default = props.TryFind "default" |}
@@ -178,33 +179,30 @@ module Schema =
                 r.Fields
                 |> Option.bind (List.tryFind (fun fr -> fr.Name = fieldName)))
 
-    let rec nameFromTypeInfo isRoot = function
-        | TypeInfo.String -> if isRoot then "string" else "String"
-        | TypeInfo.Bool -> if isRoot then "boolean" else "Boolean"
-        | TypeInfo.Int32 -> if isRoot then "int" else "Int32"
-        | TypeInfo.Long -> if isRoot then "long" else "Int64"
-        | TypeInfo.Float32 -> if isRoot then "float" else "Float"
-        | TypeInfo.Float -> if isRoot then "double" else "Double"
-        | TypeInfo.Byte -> if isRoot then "int" else "Byte"
-        | TypeInfo.Short -> if isRoot then "int" else "Short"
-        | TypeInfo.UInt16 -> if isRoot then "int" else "UInt16"
-        | TypeInfo.UInt32 -> if isRoot then "int" else "UInt32"
-        | TypeInfo.UInt64 -> if isRoot then "long" else "UInt64"
-        | TypeInfo.Array f ->
-            match f() with
-            | TypeInfo.Byte when isRoot -> "bytes"
-            | _ -> "Array_Of_" + nameFromTypeInfo false (f())
+    let rec nameFromTypeInfo = function
+        | TypeInfo.String -> "String"
+        | TypeInfo.Bool -> "Boolean"
+        | TypeInfo.Int32 -> "Int32"
+        | TypeInfo.Long -> "Int64"
+        | TypeInfo.Float32 -> "Float"
+        | TypeInfo.Float -> "Double"
+        | TypeInfo.Byte -> "Byte"
+        | TypeInfo.Short -> "Short"
+        | TypeInfo.UInt16 -> "UInt16"
+        | TypeInfo.UInt32 -> "UInt32"
+        | TypeInfo.UInt64 -> "UInt64"
+        | TypeInfo.Array f
         | TypeInfo.ResizeArray f
         | TypeInfo.HashSet f
         | TypeInfo.Set f
         | TypeInfo.Seq f
-        | TypeInfo.List f -> "Array_Of_" + nameFromTypeInfo false (f())
+        | TypeInfo.List f -> "Array_Of_" + nameFromTypeInfo (f())
         | TypeInfo.Map f ->
             let (_, valueTypeInfo) = f()
-            "Map_Of_" + nameFromTypeInfo false valueTypeInfo
+            "Map_Of_" + nameFromTypeInfo valueTypeInfo
         | TypeInfo.Dictionary f ->
             let (_, valueTypeInfo, _) = f()
-            "Map_Of_" + nameFromTypeInfo false valueTypeInfo
+            "Map_Of_" + nameFromTypeInfo valueTypeInfo
         | TypeInfo.Enum f ->
             let _, type' = f()
             let name = type'.FullName.Replace('+','.')
@@ -213,19 +211,19 @@ module Schema =
             let _, type' = f()
             nameFromType type'
         | TypeInfo.Tuple f ->
-            "Tuple_Of_" + ((f() |> Array.map (nameFromTypeInfo false)) |> (String.concat "_And_"))
+            "Tuple_Of_" + ((f() |> Array.map nameFromTypeInfo) |> (String.concat "_And_"))
         | TypeInfo.Option f ->
-            "Nullable_" + nameFromTypeInfo false (f())
+            "Nullable_" + nameFromTypeInfo (f())
         | TypeInfo.Union f ->
             let _, type' = f()
             nameFromType type'
         | TypeInfo.Any f -> nameFromType (f())
-        | TypeInfo.Guid -> if isRoot then "string" else "Guid"
-        | TypeInfo.DateTime  -> if isRoot then "string" else "DateTime"
-        | TypeInfo.DateTimeOffset -> if isRoot then "string" else "DateTimeOffset"
-        | TypeInfo.TimeSpan -> if isRoot then "int" else "TimeSpan"
-        | TypeInfo.Decimal -> if isRoot then "double" else "Decimal"
-        | TypeInfo.BigInt -> if isRoot then "string" else "BigInt"
+        | TypeInfo.Guid -> "Guid"
+        | TypeInfo.DateTime  -> "DateTime"
+        | TypeInfo.DateTimeOffset -> "DateTimeOffset"
+        | TypeInfo.TimeSpan -> "TimeSpan"
+        | TypeInfo.Decimal -> "Decimal"
+        | TypeInfo.BigInt -> "BigInt"
         | wrongTypeInfo -> failwithf "Name for the type is not supported: %A" wrongTypeInfo
     and nameFromType (type':Type) : string =
         let name = type'.FullName.Replace('+','.')
@@ -238,7 +236,7 @@ module Schema =
         | -1 -> name
         | idx ->
             type'.GetGenericArguments()
-            |> Array.map (createTypeInfo >> (nameFromTypeInfo false))
+            |> Array.map (createTypeInfo >> nameFromTypeInfo)
             |> String.concat "_And_"
             |> (sprintf "%s_Of_%s" (name.Substring(0, idx)))
 
@@ -361,7 +359,7 @@ module Schema =
                 gen valueTypeInfo |> Result.map (fun schema ->  Map {Values = schema; Default = None })
             | TypeInfo.Enum f ->
                 let _, type' = f()
-                let name = nameFromTypeInfo true ti
+                let name = nameFromTypeInfo ti
                 let schema =
                     Enum {  Name = name
                             Aliases = annotator.Enum name |> Option.map (fun r -> r.Aliases) |> Option.defaultValue []
@@ -378,13 +376,13 @@ module Schema =
             | TypeInfo.Record f ->
                 let fieldsInfo, type' = f()
                 genRecord
-                    (nameFromTypeInfo true ti)
+                    (nameFromTypeInfo ti)
                     (fieldsInfo
                         |> Array.map (fun fi -> fi.FieldName,fi.FieldType)
                         |> List.ofArray)
             | TypeInfo.Tuple f ->
                 genRecord
-                    (nameFromTypeInfo true ti)
+                    (nameFromTypeInfo ti)
                     (f()
                         |> Array.mapi (fun idx ti -> sprintf"Item%d" (idx+1),ti)
                         |> List.ofArray)

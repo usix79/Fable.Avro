@@ -167,7 +167,7 @@ let schemaTests =
             testCase "Option" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<Option<float>>
-                    <| Schema.ofString """["null","double"]"""
+                    <| Schema.ofString """[null,"double"]"""
             testCase "Option in a Record" <| fun _ ->
                 expectSchemasEqual
                     <| generateSchema typeof<RecordWithOption>
@@ -176,7 +176,7 @@ let schemaTests =
                         "name":"Foo.Bar.RecordWithOption",
                         "fields":[
                             {"name":"Id","type":"int"},
-                            {"name":"Id2","type":["null","int"]}
+                            {"name":"Id2","type":[null,"int"]}
                         ]
                     }"""
         ]
@@ -189,7 +189,7 @@ let schemaTests =
                         "type":"record",
                         "name":"Foo.Bar.GenericRecord_Of_Nullable_String",
                         "fields":[
-                            {"name":"Value","type":["null","string"]}
+                            {"name":"Value","type":[null,"string"]}
                         ]
                     }"""
             testCase "Record<List<Option>>" <| fun _ ->
@@ -199,7 +199,7 @@ let schemaTests =
                         "type":"record",
                         "name":"Foo.Bar.GenericRecord_Of_Array_Of_Nullable_String",
                         "fields":[
-                            {"name":"Value","type":{"items":["null","string"],"type":"array"}}
+                            {"name":"Value","type":{"items":[null,"string"],"type":"array"}}
                         ]
                     }"""
             testCase "Record<Map<string, string list>>>" <| fun _ ->
@@ -355,7 +355,7 @@ let schemaTests =
                                             "fields":[{"name":"Item","type":"string"}]
                                         }]
                                     },
-                                    {"name":"Item2","type": "string"}
+                                    {"name":"Item2","type": "double"}
                                 ]
                             },
                             {
@@ -445,7 +445,7 @@ let schemaTests =
                         "name":"Foo.Bar.RecordWithOption",
                         "fields":[
                             {"name":"Id","type":"int", "default":0},
-                            {"name":"Id2","type":["null","int"], "default":null}
+                            {"name":"Id2","type":[null,"int"], "default":null}
                         ]
                     }"""
             testCase "Tuple" <| fun _ ->

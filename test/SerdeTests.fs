@@ -58,7 +58,9 @@ let simpleCases = [
         simpleCase "SimpleEnum" TestState.Yellow
     ]
     simpleCaseList "Array" [
-        simpleCase "bytes" [|00uy; 255uy; 12uy; 16uy; 00uy|]
+        // deserialization of byte array is not supported yet due to limitations of SimpleJson
+        //simpleCase "bytes" [|00uy; 255uy; 34uy; 12uy; 16uy; 00uy|]
+
         simpleCase "List" ["One"; "Two"; "Three"]
         simpleCase "Array" [|"One"; "Two"; "Three"|]
         simpleCase "Set" (["One"; "Two"; "Three"] |> Set.ofList)
@@ -231,9 +233,11 @@ let jsonSimpleTest (case:SimpleCase) =
     testCase case.Name <| fun _ ->
         let serializer = JsonSerde.createSerializer' case.InstanceType JsonSerde.defaultSerializationOptions
         let json = serializer case.Instance
-        //printfn "Serialization result: %s" <| Fable.SimpleJson.SimpleJson.toString json
+        let jsonString = Fable.SimpleJson.SimpleJson.toString json
+        printfn "Serialization result: %s" <| jsonString
+        let deserializedJson = Fable.SimpleJson.SimpleJson.parse jsonString
         let deserializer = JsonSerde.createDeserializer' case.InstanceType JsonSerde.defaultDeserializationOptions
-        let copy = deserializer json
+        let copy = deserializer deserializedJson
         case.Comparer "Copy should be equal to original" copy case.Instance
 
 let jsonEvolutionTest (case:EvolutionCase) =

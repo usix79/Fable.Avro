@@ -5,6 +5,12 @@ open FSharp.Reflection
 open Fable.SimpleJson
 open Fable.Core
 
+[<Emit("String.fromCharCode($0)")>]
+let fromCharCode (x: byte) : string = jsNative
+
+[<Emit("$0.charCodeAt($1)")>]
+let charCodeAt (s:string)(idx: int) : int = jsNative
+
 let internal rulesMap (rules:CustomRule list) =
     rules
     |> List.map(fun rule ->
@@ -45,12 +51,11 @@ let createSerializer'(type': Type) (options:SerializationOptions): obj -> Json =
             | TypeInfo.Array f ->
                 match f() with
                 | TypeInfo.Byte ->
-                    let hex =
-                        unbox<byte []>(value)
-                        |> Array.map (fun b -> b.ToString("X2"))
-                        |> Seq.ofArray
-                        |> String.concat ""
-                    JString ("\\u" + hex)
+                    unbox<byte []>(value)
+                    |> Array.map (fun b -> "\\u" + b.ToString("X4"))
+                    |> Seq.ofArray
+                    |> String.concat ""
+                    |> JString
                 | ti -> value |> unbox<obj []> |> List.ofArray |> (parseArray ti)
             | TypeInfo.ResizeArray f -> value |> unbox<ResizeArray<obj>> |> List.ofSeq |> (parseArray(f()))
             | TypeInfo.Set f -> value |> unbox<Set<IComparable>> |> List.ofSeq |> List.map box |> (parseArray(f()))
@@ -101,7 +106,7 @@ let createSerializer'(type': Type) (options:SerializationOptions): obj -> Json =
                 | None -> JNull
                 | Some v ->
                     let typeInfo = f()
-                    [Schema.nameFromTypeInfo true typeInfo, parse v typeInfo] |> Map.ofList |> JObject
+                    [Schema.nameFromTypeInfo typeInfo, parse v typeInfo] |> Map.ofList |> JObject
             | TypeInfo.Decimal -> (unbox value) |> JNumber
             | TypeInfo.Guid -> (unbox<Guid> value).ToString() |> JString
             | TypeInfo.DateTime -> (unbox<DateTime> value).ToString("O", Globalization.CultureInfo.InvariantCulture) |> JString
@@ -173,18 +178,16 @@ let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> 
             | JNumber v, TypeInfo.UInt64 -> v |> uint64 |> unbox
             | JNumber v, TypeInfo.Float32 -> v |> float32 |> unbox
             | JNumber v, TypeInfo.Float -> v |> unbox
-            | JString v, TypeInfo.Array f ->    // "\uFF00AA124342"
-              Array.unfold (fun idx ->
-                if (idx * 2 + 4) <= v.Length then Some(v.Substring(idx * 2 + 2, 2)) else None
-                |> Option.map (fun v -> Convert.ToByte(v, 16), (idx + 1))) 0
-              |> unbox
+            | JString v, TypeInfo.Array f ->
+                [|for idx in 0 .. v.Length - 1 do charCodeAt v idx|]
+                |> unbox
             | JString v, TypeInfo.Enum f ->
                 let (_, type') = f()
                 try
                     Enum.Parse(type', v)
                 with
                 | err ->
-                    ann.Enum (Schema.nameFromTypeInfo true ti)
+                    ann.Enum (Schema.nameFromTypeInfo ti)
                     |> Option.bind (fun r -> r.Default)
                     |> Option.bind (function JString v -> Enum.Parse(type', v) |> Some | _ -> None)
                     |> Option.defaultWith (fun () ->
@@ -217,7 +220,7 @@ let createDeserializer' (type': Type) (options:DeserializationOptions): Json -> 
                 f()
                 |> Array.mapi(fun idx itemTypeInfo ->
                     let fieldName = sprintf "Item%d" (idx+1)
-                    fieldValue props (fun () -> Schema.nameFromTypeInfo true ti) fieldName itemTypeInfo)
+                    fieldValue props (fun () -> Schema.nameFromTypeInfo ti) fieldName itemTypeInfo)
                 |> unbox
             | JObject props, TypeInfo.Union f ->
                 let unionCases, unionType = f()
