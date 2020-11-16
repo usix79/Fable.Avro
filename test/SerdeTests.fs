@@ -59,7 +59,7 @@ let simpleCases = [
     ]
     simpleCaseList "Array" [
         // deserialization of byte array is not supported yet due to limitations of SimpleJson
-        //simpleCase "bytes" [|00uy; 255uy; 34uy; 12uy; 16uy; 00uy|]
+        //gitsimpleCase "bytes" [|00uy; 255uy; 34uy; 12uy; 16uy; 00uy|]
 
         simpleCase "List" ["One"; "Two"; "Three"]
         simpleCase "Array" [|"One"; "Two"; "Three"|]

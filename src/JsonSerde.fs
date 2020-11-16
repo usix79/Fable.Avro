@@ -52,9 +52,11 @@ let createSerializer'(type': Type) (options:SerializationOptions): obj -> Json =
                 match f() with
                 | TypeInfo.Byte ->
                     unbox<byte []>(value)
-                    |> Array.map (fun b -> "\\u" + b.ToString("X4"))
+                    |> Array.map fromCharCode
                     |> Seq.ofArray
                     |> String.concat ""
+                    |> Convert.quoteText
+                    |> Convert.removeQuotes
                     |> JString
                 | ti -> value |> unbox<obj []> |> List.ofArray |> (parseArray ti)
             | TypeInfo.ResizeArray f -> value |> unbox<ResizeArray<obj>> |> List.ofSeq |> (parseArray(f()))
