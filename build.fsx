@@ -70,6 +70,9 @@ Target.create "RunTests" <| fun _ ->
     cleanBundles()
     cleanDirs [ "dist" ]
 
+Target.create "Package" <| fun _ ->
+    dotnet "build -c Release" libPath
+
 open Fake.Core.TargetOperators
 
 "Clean"
@@ -83,5 +86,6 @@ open Fake.Core.TargetOperators
 "Clean"
     ==> "InstallNpmPackages"
     ==> "RunTests"
+    ==> "Package"
 
 Target.runOrDefaultWithArguments "RunTests"
