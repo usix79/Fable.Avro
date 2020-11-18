@@ -80,4 +80,8 @@ open Fake.Core.TargetOperators
     ==> "InstallNpmPackages"
     ==> "RunTests"
 
+"Clean"
+    ==> "InstallNpmPackages"
+    ==> "RunTests"
+
 Target.runOrDefaultWithArguments "RunTests"

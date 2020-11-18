@@ -212,7 +212,7 @@ Example:
 
 `generate Schema.defaultOptions typeof<Option<float>>` generates `["null","double"]`
 
-### Special cases
+### Known types
 
 Following types are handled in special way
 
@@ -356,7 +356,7 @@ Following rules are used:
 | `Guid` | `"00000000-0000-0000-0000-000000000000"` |
 | `DateTime` | `"1970-01-01T00:00:00.000Z"` |
 | `DateTimeOffset` | `"1970-01-01T00:00:00.000+00:00"` |
-| `TimeSpan` | `0` |
+| `TimeSpan` | 0 |
 
 If deserializer can not find field's value it looks default value in the annotations. If annotations do not have defalut value for the field, stub value is created. Set `DeserializationOptions.EvolutionTolerantMode=false` if you don't want the behaviour.
 
